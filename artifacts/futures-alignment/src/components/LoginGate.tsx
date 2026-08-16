@@ -48,9 +48,6 @@ export function LoginGate({ children }: Props) {
           alt="Market Posture"
           className="mx-auto mb-5 h-24 w-24 rounded-2xl"
         />
-        <div className="mb-2 text-2xl font-bold text-white tracking-tight">
-          Market Posture
-        </div>
         <div className="mb-8 text-sm text-zinc-500">
           Multi-timeframe futures command center
         </div>

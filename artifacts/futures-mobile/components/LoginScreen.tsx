@@ -43,7 +43,6 @@ export default function LoginScreen({ onLogin }: Props) {
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.title}>Market Posture</Text>
         <Text style={styles.subtitle}>Multi-timeframe futures command center</Text>
 
         <TextInput
