@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/futures-mobile/"
+title = "Market Posture (Mobile)"
+description = "A mobile companion to Market Posture. Shows real-time contract cards with direction badge, confidence %, ADX/RSI indicators, and trade levels. Consumes the existing API server's SSE stream for live updates, with 30-second polling fallback when backgrounded. Matches the dark terminal aesthetic of the web app."
+version = "1.0.0"
+id = "artifacts/futures-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/futures-mobile/" ]
+localPort = 24950
+
+[services.development]
+run = "pnpm --filter @workspace/futures-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/futures-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/futures-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "24950"
+BASE_PATH = "/futures-mobile/"

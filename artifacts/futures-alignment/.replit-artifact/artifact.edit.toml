@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Market Posture"
+description = "A live futures market dashboard powered by Databento, showing multi-timeframe volume, volatility, trend direction, and aligned trade setups for ES, NQ, MES, and MNQ."
+version = "1.0.0"
+id = "artifacts/futures-alignment"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22434
+
+[services.development]
+run = "pnpm --filter @workspace/futures-alignment run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/futures-alignment", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/futures-alignment/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22434"
+BASE_PATH = "/"

@@ -1,36 +1,51 @@
-# [Project name]
+# Market Posture
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A live futures market dashboard that answers one question in real time: *Is the tape aligned?* — showing multi-timeframe volume, volatility, trend direction, and ORB/VWAP trade setups for ES, NQ, MES, and MNQ contracts.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/futures-alignment run dev` — run the web dashboard (port 22434)
+- `pnpm --filter @workspace/futures-mobile run dev` — run the Expo mobile app (port 24950)
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm run typecheck` — full typecheck across all packages
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
+- API: Express 5 + SSE for live market streaming
+- Web: React 19 + Vite 7 + Tailwind v4 + shadcn/ui
+- Mobile: Expo 54 + React Native + Expo Router
+- Data: Databento (live intraday feed via WebSocket + historical REST)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/src/lib/market-engine.ts` — core market snapshot state + Databento polling
+- `artifacts/api-server/src/lib/databento-live.ts` — live TCP feed client (WebSocket/MBP)
+- `artifacts/api-server/src/lib/orb-engine.ts` — Opening Range Breakout signal computation
+- `artifacts/api-server/src/lib/vwap-engine.ts` — VWAP reversion signal computation
+- `artifacts/api-server/src/routes/market.ts` — REST + SSE route handlers
+- `artifacts/futures-alignment/src/components/market-dashboard.tsx` — main web UI
+- `artifacts/futures-alignment/src/components/OrbPanel.tsx` — ORB signal panel
+- `artifacts/futures-alignment/src/components/VwapPanel.tsx` — VWAP reversion panel
+- `artifacts/futures-mobile/app/index.tsx` — mobile home screen
+- `lib/api-spec/openapi.yaml` — single source of truth for all API contracts
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- SSE stream (`/api/market/stream`) pushes updated snapshots to the web/mobile client ~once per minute as new bars arrive; polling fallback every 60s ensures mobile clients backgrounded through the gap still recover.
+- ORB and VWAP computations run on the server using the same cached bar data as the main snapshot — no extra Databento calls.
+- Bearer token auth (`API_TOKEN` env var) is optional; unset means all `/api` routes are open (dev default).
+- Expo mobile uses `EXPO_PUBLIC_DOMAIN` and SSE query-param auth (`?token=`) because `EventSource` cannot send custom headers.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+**Web (Market Posture):** Dark terminal-aesthetic dashboard showing ES, NQ, MES, MNQ. KPI summary bar, per-symbol cards with multi-timeframe signal badges, ORB section (Opening Range Breakout, 09:30–10:00 ET window), and VWAP reversion section. Session-aware (shows weekend/pre-market state when markets are closed).
+
+**Mobile (Market Posture Mobile):** Companion Expo app with real-time contract cards via SSE stream. Matches the dark aesthetic; optimized for at-a-glance reading on the go.
 
 ## User preferences
 
@@ -38,8 +53,11 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- `DATABENTO_API_KEY` must be set for live data. Without it the API server starts and responds but returns an "unavailable" source in all snapshots.
+- The live feed attempts a TCP connection on startup; missing API key prints a WARN but does not crash.
+- Run codegen (`pnpm --filter @workspace/api-spec run codegen`) whenever `lib/api-spec/openapi.yaml` changes before touching frontend code.
+- Do NOT run `pnpm dev` at workspace root — run each artifact individually or use the managed workflows.
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
