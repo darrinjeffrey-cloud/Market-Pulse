@@ -1,81 +1,305 @@
-/**
- * auth.ts — Guest invite route.
- *
- * POST /api/auth/invite  (admin only — requires the main API_TOKEN)
- *   Body: { ttl: "1h" | "8h" | "24h" | "7d" | "30d", label?: string }
- *   Returns: { token: string, expiresAt: string }
- *
- * GET /api/auth/validate
- *   Returns info about the current bearer token (role, expiresAt if guest).
- *   Returns 401 if the token is absent / invalid.
- */
+import {
+  ExchangeMobileAuthorizationCodeBody,
+  ExchangeMobileAuthorizationCodeResponse,
+  GetCurrentAuthUserResponse,
+  LogoutMobileSessionResponse,
+} from '@workspace/api-zod';
+import { db, usersTable } from '@workspace/db';
+import { Router, type IRouter, type Request, type Response } from 'express';
+import * as oidc from 'openid-client';
 
-import { Router } from "express";
-import { signGuestToken, verifyGuestToken, type InviteTtl } from "../lib/guest-auth";
-import { logger } from "../lib/logger";
+import {
+  clearSession,
+  createSession,
+  deleteSession,
+  getOidcConfig,
+  getSessionId,
+  ISSUER_URL,
+  SESSION_COOKIE,
+  SESSION_TTL,
+  type SessionData,
+} from '../lib/auth';
+import { logger } from '../lib/logger';
 
-const TTL_VALUES: InviteTtl[] = ["1h", "8h", "24h", "7d", "30d"];
+/** Email allowlist — if set, only this address may log in. */
+const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL;
+if (!ALLOWED_EMAIL) {
+  logger.warn('ALLOWED_EMAIL is not set — any Replit account can log in');
+}
 
-const router = Router();
+const OIDC_COOKIE_TTL = 10 * 60 * 1000;
 
-// POST /api/auth/invite — generate a guest invite token
-// This route is behind the global auth middleware, so only a valid API_TOKEN holder can call it.
-router.post("/auth/invite", (req, res) => {
-  const { ttl = "7d", label = "Guest" } = req.body as { ttl?: InviteTtl; label?: string };
+const router: IRouter = Router();
 
-  if (!TTL_VALUES.includes(ttl)) {
-    res.status(400).json({ error: `ttl must be one of: ${TTL_VALUES.join(", ")}` });
-    return;
+function getOrigin(req: Request): string {
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers['host'] || 'localhost';
+  return `${proto}://${host}`;
+}
+
+function setSessionCookie(res: Response, sid: string) {
+  res.cookie(SESSION_COOKIE, sid, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: SESSION_TTL,
+  });
+}
+
+function setOidcCookie(res: Response, name: string, value: string) {
+  res.cookie(name, value, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: OIDC_COOKIE_TTL,
+  });
+}
+
+function getSafeReturnTo(value: unknown): string {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) {
+    return '/';
   }
+  return value;
+}
 
-  let token: string;
-  try {
-    token = signGuestToken(ttl, String(label).slice(0, 64));
-  } catch (err) {
-    logger.error({ err }, "Failed to sign guest token");
-    res.status(500).json({ error: "Could not generate token — SESSION_SECRET may be missing" });
-    return;
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
-  // Decode immediately to surface the actual expiry to the caller
-  const payload = verifyGuestToken(token);
-  const expiresAt = payload ? new Date(payload.exp * 1000).toISOString() : null;
+function getErrorStatus(value: Record<string, unknown>): number | string | undefined {
+  if (typeof value.status === 'number' || typeof value.status === 'string') return value.status;
+  if (typeof value.statusCode === 'number' || typeof value.statusCode === 'string') return value.statusCode;
+  return undefined;
+}
 
-  res.json({ token, expiresAt });
+function getSafeErrorMetadata(error: unknown) {
+  if (!isRecord(error)) return { errorName: typeof error };
+  const errorStatus = getErrorStatus(error);
+  const causeStatus = isRecord(error.cause) ? getErrorStatus(error.cause) : undefined;
+  return {
+    errorName: error instanceof Error ? error.name : 'Error',
+    errorStatus: errorStatus ?? causeStatus,
+  };
+}
+
+async function upsertUser(claims: Record<string, unknown>) {
+  const userData = {
+    id: claims.sub as string,
+    email: (claims.email as string) || null,
+    firstName: (claims.first_name as string) || null,
+    lastName: (claims.last_name as string) || null,
+    profileImageUrl: (claims.profile_image_url || claims.picture) as string | null,
+  };
+
+  const [user] = await db
+    .insert(usersTable)
+    .values(userData)
+    .onConflictDoUpdate({
+      target: usersTable.id,
+      set: { ...userData, updatedAt: new Date() },
+    })
+    .returning();
+  return user;
+}
+
+function isEmailAllowed(email: string | null | undefined): boolean {
+  if (!ALLOWED_EMAIL) return true; // no allowlist configured — open access
+  return email === ALLOWED_EMAIL;
+}
+
+router.get('/auth/user', (req: Request, res: Response) => {
+  res.json(GetCurrentAuthUserResponse.parse({ user: req.isAuthenticated() ? req.user : null }));
 });
 
-// GET /api/auth/validate — returns info about the current bearer token
-router.get("/auth/validate", (req, res) => {
-  const API_TOKEN = process.env["API_TOKEN"];
+router.get('/login', async (req: Request, res: Response) => {
+  const config = await getOidcConfig();
+  const callbackUrl = `${getOrigin(req)}/api/callback`;
+  const returnTo = getSafeReturnTo(req.query.returnTo);
 
-  const authHeader = req.headers["authorization"];
-  const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const queryToken = typeof req.query["token"] === "string" ? req.query["token"] : null;
-  const raw = headerToken ?? queryToken ?? null;
+  const state = oidc.randomState();
+  const nonce = oidc.randomNonce();
+  const codeVerifier = oidc.randomPKCECodeVerifier();
+  const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
 
-  if (!raw) {
-    res.status(401).json({ error: "No token provided" });
+  const redirectTo = oidc.buildAuthorizationUrl(config, {
+    redirect_uri: callbackUrl,
+    scope: 'openid email profile offline_access',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    prompt: 'login consent',
+    state,
+    nonce,
+  });
+
+  setOidcCookie(res, 'code_verifier', codeVerifier);
+  setOidcCookie(res, 'nonce', nonce);
+  setOidcCookie(res, 'state', state);
+  setOidcCookie(res, 'return_to', returnTo);
+
+  res.redirect(redirectTo.href);
+});
+
+router.get('/callback', async (req: Request, res: Response) => {
+  const config = await getOidcConfig();
+  const callbackUrl = `${getOrigin(req)}/api/callback`;
+
+  const codeVerifier = req.cookies?.code_verifier;
+  const nonce = req.cookies?.nonce;
+  const expectedState = req.cookies?.state;
+
+  if (!codeVerifier || !expectedState) {
+    res.redirect('/api/login');
     return;
   }
 
-  // Admin token
-  if (raw === API_TOKEN) {
-    res.json({ role: "admin", label: "Admin" });
-    return;
-  }
+  const currentUrl = new URL(
+    `${callbackUrl}?${new URL(req.url, `http://${req.headers.host}`).searchParams}`,
+  );
 
-  // Guest JWT
-  const payload = verifyGuestToken(raw);
-  if (payload) {
-    res.json({
-      role: "guest",
-      label: payload.label,
-      expiresAt: new Date(payload.exp * 1000).toISOString(),
+  let tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers;
+  try {
+    tokens = await oidc.authorizationCodeGrant(config, currentUrl, {
+      pkceCodeVerifier: codeVerifier,
+      expectedNonce: nonce,
+      expectedState,
+      idTokenExpected: true,
     });
+  } catch {
+    res.redirect('/api/login');
     return;
   }
 
-  res.status(401).json({ error: "Invalid or expired token" });
+  const returnTo = getSafeReturnTo(req.cookies?.return_to);
+
+  res.clearCookie('code_verifier', { path: '/' });
+  res.clearCookie('nonce', { path: '/' });
+  res.clearCookie('state', { path: '/' });
+  res.clearCookie('return_to', { path: '/' });
+
+  const claims = tokens.claims();
+  if (!claims) {
+    res.redirect('/api/login');
+    return;
+  }
+
+  // Allowlist check — only the configured email may access
+  const email = claims.email as string | null | undefined;
+  if (!isEmailAllowed(email)) {
+    logger.warn({ email }, 'Login attempt rejected — email not in allowlist');
+    res.status(403).send(
+      '<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:4rem">' +
+      '<h2>Access denied</h2><p>Your account is not authorized to access this application.</p>' +
+      '<a href="/api/login">Try a different account</a></body></html>',
+    );
+    return;
+  }
+
+  const dbUser = await upsertUser(claims as unknown as Record<string, unknown>);
+
+  const now = Math.floor(Date.now() / 1000);
+  const sessionData: SessionData = {
+    user: {
+      id: dbUser.id,
+      email: dbUser.email,
+      firstName: dbUser.firstName,
+      lastName: dbUser.lastName,
+      profileImageUrl: dbUser.profileImageUrl,
+    },
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    expires_at: tokens.expiresIn() ? now + tokens.expiresIn()! : claims.exp,
+  };
+
+  const sid = await createSession(sessionData);
+  setSessionCookie(res, sid);
+  res.redirect(returnTo);
+});
+
+router.get('/logout', async (req: Request, res: Response) => {
+  const config = await getOidcConfig();
+  const origin = getOrigin(req);
+  const returnTo = getSafeReturnTo(req.query.returnTo);
+  const postLogoutRedirectUrl = new URL(returnTo, `${origin}/`).href;
+
+  const sid = getSessionId(req);
+  await clearSession(res, sid);
+
+  const endSessionUrl = oidc.buildEndSessionUrl(config, {
+    client_id: process.env.REPL_ID!,
+    post_logout_redirect_uri: postLogoutRedirectUrl,
+  });
+
+  res.redirect(endSessionUrl.href);
+});
+
+router.post('/mobile-auth/token-exchange', async (req: Request, res: Response) => {
+  const parsed = ExchangeMobileAuthorizationCodeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Missing or invalid required parameters' });
+    return;
+  }
+
+  const { code, code_verifier, redirect_uri, state, nonce } = parsed.data;
+
+  try {
+    const config = await getOidcConfig();
+
+    const callbackUrl = new URL(redirect_uri);
+    callbackUrl.searchParams.set('code', code);
+    callbackUrl.searchParams.set('state', state);
+    callbackUrl.searchParams.set('iss', ISSUER_URL);
+
+    const tokens = await oidc.authorizationCodeGrant(config, callbackUrl, {
+      pkceCodeVerifier: code_verifier,
+      expectedNonce: nonce ?? undefined,
+      expectedState: state,
+      idTokenExpected: true,
+    });
+
+    const claims = tokens.claims();
+    if (!claims) {
+      res.status(401).json({ error: 'No claims in ID token' });
+      return;
+    }
+
+    // Allowlist check
+    const email = claims.email as string | null | undefined;
+    if (!isEmailAllowed(email)) {
+      logger.warn({ email }, 'Mobile login attempt rejected — email not in allowlist');
+      res.status(403).json({ error: 'Access denied: your account is not authorized.' });
+      return;
+    }
+
+    const dbUser = await upsertUser(claims as unknown as Record<string, unknown>);
+
+    const now = Math.floor(Date.now() / 1000);
+    const sessionData: SessionData = {
+      user: {
+        id: dbUser.id,
+        email: dbUser.email,
+        firstName: dbUser.firstName,
+        lastName: dbUser.lastName,
+        profileImageUrl: dbUser.profileImageUrl,
+      },
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: tokens.expiresIn() ? now + tokens.expiresIn()! : claims.exp,
+    };
+
+    const sid = await createSession(sessionData);
+    res.json(ExchangeMobileAuthorizationCodeResponse.parse({ token: sid }));
+  } catch (err) {
+    req.log.error(getSafeErrorMetadata(err), 'Mobile token exchange error');
+    res.status(500).json({ error: 'Token exchange failed' });
+  }
+});
+
+router.post('/mobile-auth/logout', async (req: Request, res: Response) => {
+  const sid = getSessionId(req);
+  if (sid) await deleteSession(sid);
+  res.json(LogoutMobileSessionResponse.parse({ success: true }));
 });
 
 export default router;

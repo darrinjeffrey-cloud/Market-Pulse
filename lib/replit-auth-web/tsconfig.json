@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "types": ["vite/client"]
+  },
+  "references": [
+    { "path": "../../lib/api-client-react" }
+  ],
+  "include": ["src"]
+}

@@ -4,7 +4,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import LoginScreen from '@/components/LoginScreen';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -15,7 +14,7 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { setBaseUrl } from '@workspace/api-client-react';
-import { loadToken } from '@/hooks/tokenStore';
+import { AuthProvider, useAuth } from '@/lib/auth';
 
 // Configure the API base URL — Expo runs outside the web proxy,
 // so it needs an absolute HTTPS URL to reach the shared API server.
@@ -37,38 +36,28 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function AppContent() {
+  const { isLoading, isAuthenticated, login } = useAuth();
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
   });
-  // null = still loading from SecureStore; false = need login; true = authed
-  const [authState, setAuthState] = useState<null | boolean>(null);
-
-  // Load persisted token once on mount, before hiding the splash screen
-  useEffect(() => {
-    loadToken().then((t) => {
-      setAuthState(!!t);
-    });
-  }, []);
 
   useEffect(() => {
-    if ((fontsLoaded || fontError) && authState !== null) {
+    if ((fontsLoaded || fontError) && !isLoading) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError, authState]);
+  }, [fontsLoaded, fontError, isLoading]);
 
   if (!fontsLoaded && !fontError) return null;
-  if (authState === null) return null; // still loading token from SecureStore
+  if (isLoading) return null;
 
-  if (!authState) {
-    return (
-      <SafeAreaProvider>
-        <LoginScreen onSuccess={() => setAuthState(true)} />
-      </SafeAreaProvider>
-    );
+  if (!isAuthenticated) {
+    // Trigger Replit OIDC login immediately
+    void login();
+    return null;
   }
 
   return (
@@ -83,5 +72,13 @@ export default function RootLayout() {
         </QueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

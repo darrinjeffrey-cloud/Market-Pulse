@@ -7,7 +7,6 @@
  */
 
 import { useEffect, useState } from 'react';
-import { getAuthHeaders } from '@/lib/auth';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -240,7 +239,7 @@ export function OrbPanel({ snapshotTimestamp }: { snapshotTimestamp?: string }) 
   const [data, setData] = useState<OrbSnapshot | null>(null);
 
   const refresh = () => {
-    fetch('/api/market/orb', { headers: getAuthHeaders() })
+    fetch('/api/market/orb', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setData(d as OrbSnapshot))
       .catch(() => {});

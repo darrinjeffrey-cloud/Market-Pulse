@@ -6,7 +6,6 @@
  */
 
 import { useEffect, useState } from 'react';
-import { getAuthHeaders } from '@/lib/auth';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -268,7 +267,7 @@ export function VwapPanel({ snapshotTimestamp }: { snapshotTimestamp?: string })
   const [data, setData] = useState<VwapSnapshot | null>(null);
 
   const refresh = () => {
-    fetch('/api/market/vwap', { headers: getAuthHeaders() })
+    fetch('/api/market/vwap', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setData(d as VwapSnapshot))
       .catch(() => {});

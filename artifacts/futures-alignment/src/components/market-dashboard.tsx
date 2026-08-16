@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getAuthHeaders, getStoredToken, logout } from '@/lib/auth';
-import { InvitePanel } from './InvitePanel';
 import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
 import {
@@ -25,7 +23,6 @@ import {
   TrendingDown,
   TrendingUp,
   Trash2,
-  UserPlus,
   WifiOff,
   X,
   Zap,
@@ -887,7 +884,7 @@ function FuturesSearchDialog({
 
   useEffect(() => {
     if (!open) { setQuery(''); return; }
-    fetch('/api/market/catalog', { headers: getAuthHeaders() })
+    fetch('/api/market/catalog', { credentials: 'include' })
       .then((r) => r.json())
       .then((data) => setCatalog(data as CatalogEntry[]))
       .catch(() => {});
@@ -921,13 +918,14 @@ function FuturesSearchDialog({
       if (isWatched) {
         await fetch(`/api/market/watchlist/${encodeURIComponent(entry.symbol)}`, {
           method: 'DELETE',
-          headers: getAuthHeaders(),
+          credentials: 'include',
         });
         onRemove(entry.displayName);
       } else {
         await fetch('/api/market/watchlist', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ symbol: entry.symbol }),
         });
         onAdd(entry.displayName);
@@ -1072,21 +1070,10 @@ export function MarketDashboard() {
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [streamSnapshot, setStreamSnapshot] = useState<MarketSnapshot | null>(null);
   const [streamAttempt, setStreamAttempt] = useState(0);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   // Optimistic watchlist: symbols added/removed via dialog before SSE reflects them
   const [extraWatched, setExtraWatched] = useState<Set<string>>(new Set());
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
 
-  // Determine role (admin vs guest) by validating the stored token
-  useEffect(() => {
-    const token = getStoredToken();
-    if (!token) return;
-    fetch('/api/auth/validate', { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((body: { role?: string }) => setIsAdmin(body.role === 'admin'))
-      .catch(() => {});
-  }, []);
   const [activeContract, setActiveContractRaw] = useState<string | null>(() => {
     try { return localStorage.getItem('activeContract'); } catch { return null; }
   });
@@ -1100,9 +1087,7 @@ export function MarketDashboard() {
   }, []);
 
   useEffect(() => {
-    const token = getStoredToken();
-    const streamUrl = token ? `/api/market/stream?token=${encodeURIComponent(token)}` : '/api/market/stream';
-    const source = new EventSource(streamUrl);
+    const source = new EventSource('/api/market/stream', { withCredentials: true });
     setStreamState('connecting');
 
     const receive = (event: MessageEvent<string>) => {
@@ -1160,7 +1145,7 @@ export function MarketDashboard() {
     });
     setOptimisticRemoved((prev) => new Set([...prev, symbol]));
     try {
-      await fetch(`/api/market/watchlist/${encodeURIComponent(symbol)}`, { method: 'DELETE', headers: getAuthHeaders() });
+      await fetch(`/api/market/watchlist/${encodeURIComponent(symbol)}`, { method: 'DELETE', credentials: 'include' });
     } catch {
       // Revert on failure
       setOptimisticRemoved((prev) => { const next = new Set(prev); next.delete(symbol); return next; });
@@ -1253,17 +1238,6 @@ export function MarketDashboard() {
                 });
               }}
             />
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setInviteOpen(true)}
-                aria-label="Generate guest invite link"
-                title="Invite a guest"
-                className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-[hsl(var(--primary)/.45)] hover:text-[hsl(var(--primary))] active:scale-95"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-              </button>
-            )}
             <button
               type="button"
               onClick={retryAll}
@@ -1275,7 +1249,7 @@ export function MarketDashboard() {
             </button>
             <button
               type="button"
-              onClick={logout}
+              onClick={() => { window.location.href = '/api/logout'; }}
               aria-label="Sign out"
               title="Sign out"
               className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-destructive/40 hover:text-destructive active:scale-95"
@@ -1286,7 +1260,6 @@ export function MarketDashboard() {
         </div>
         <div className="h-px overflow-hidden bg-border/30"><div className="fam-scanline h-px w-1/3" /></div>
       </header>
-      <InvitePanel open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <DisconnectedNotice streamState={streamState} onReconnect={() => setStreamAttempt((value) => value + 1)} />
       <main className="mx-auto max-w-[1560px] px-4 pb-12 pt-7 sm:px-6 lg:px-8">
         <div className="fam-rise mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
