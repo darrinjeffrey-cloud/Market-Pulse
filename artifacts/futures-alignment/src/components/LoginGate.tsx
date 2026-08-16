@@ -43,6 +43,11 @@ export function LoginGate({ children }: Props) {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-sm text-center">
+        <img
+          src="/favicon.png"
+          alt="Market Posture"
+          className="mx-auto mb-5 h-24 w-24 rounded-2xl"
+        />
         <div className="mb-2 text-2xl font-bold text-white tracking-tight">
           Market Posture
         </div>

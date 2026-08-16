@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -37,6 +38,11 @@ export default function LoginScreen({ onLogin }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.card}>
+        <Image
+          source={require('../assets/images/icon.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <Text style={styles.title}>Market Posture</Text>
         <Text style={styles.subtitle}>Multi-timeframe futures command center</Text>
 
@@ -86,6 +92,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 340,
     alignItems: 'center',
+  },
+  logo: {
+    width: 96,
+    height: 96,
+    borderRadius: 20,
+    marginBottom: 20,
   },
   title: {
     color: '#fff',
