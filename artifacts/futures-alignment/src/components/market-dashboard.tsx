@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getAuthHeaders, getStoredToken } from '@/lib/auth';
+import { getAuthHeaders, getStoredToken, logout } from '@/lib/auth';
 import { InvitePanel } from './InvitePanel';
 import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
@@ -16,6 +16,7 @@ import {
   Database,
   Gauge,
   Loader2,
+  LogOut,
   Plus,
   RefreshCw,
   Radio,
@@ -1271,6 +1272,15 @@ export function MarketDashboard() {
               className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-[hsl(var(--primary)/.45)] hover:text-[hsl(var(--primary))] active:scale-95"
             >
               <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              aria-label="Sign out"
+              title="Sign out"
+              className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-destructive/40 hover:text-destructive active:scale-95"
+            >
+              <LogOut className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

@@ -35,6 +35,12 @@ export function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** Clear the stored token and reload to the login screen. */
+export function logout(): void {
+  clearStoredToken();
+  window.location.reload();
+}
+
 /**
  * Read a ?token= query param from the current URL, store it in sessionStorage,
  * and strip it from the URL bar so it doesn't stay visible or get bookmarked.
