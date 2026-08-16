@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "_lD8Ly5HJlwrVDhVGZ4Hy"
+uri = "file://attached_assets/market-posture-logo-variant.png"
+type = "image"
+title = "Market Posture Logo — Black & Yellow Variant"
+description = "Black background, yellow arrows, Market/Posture text in black and yellow"
