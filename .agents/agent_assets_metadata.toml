@@ -7,3 +7,10 @@ uri = "file://attached_assets/market-posture-logo-variant.png"
 type = "image"
 title = "Market Posture Logo — Black & Yellow Variant"
 description = "Black background, yellow arrows, Market/Posture text in black and yellow"
+
+[[outputs]]
+id = "FVc8jNTS2ONnlD8Uk3oND"
+uri = "file://attached_assets/market-posture-logo-v2.png"
+type = "image"
+title = "Market Posture Logo v2 — All Black & Yellow"
+description = "Full black tile, sharp yellow arrows, yellow text"
