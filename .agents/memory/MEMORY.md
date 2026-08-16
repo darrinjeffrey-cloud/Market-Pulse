@@ -1,1 +1,1 @@
-- [Replit Auth migration](replit-auth.md) — Full OIDC auth replacing bearer token; email allowlist enforced server-side.
+- [Auth system](auth-system.md) — Password gate (ADMIN_PASSWORD secret) replaced Replit OIDC; sessions stored in Postgres.
