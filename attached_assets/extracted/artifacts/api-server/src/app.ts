@@ -1,0 +1,59 @@
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import cors from "cors";
+import pinoHttp from "pino-http";
+import router from "./routes";
+import { logger } from "./lib/logger";
+
+const app: Express = express();
+
+// ── CORS first — preflight OPTIONS must get CORS headers before auth check ───
+app.use(cors());
+
+app.use(
+  pinoHttp({
+    logger,
+    serializers: {
+      req(req) {
+        return {
+          id: req.id,
+          method: req.method,
+          url: req.url?.split("?")[0],
+        };
+      },
+      res(res) {
+        return {
+          statusCode: res.statusCode,
+        };
+      },
+    },
+  }),
+);
+
+// ── Bearer-token auth ────────────────────────────────────────────────────────
+// Accepts Authorization: Bearer <token> header, or ?token= query param
+// (EventSource cannot send custom headers, so SSE uses the query param).
+const API_TOKEN = process.env["API_TOKEN"];
+if (!API_TOKEN) {
+  logger.warn("API_TOKEN is not set — all /api routes are unprotected");
+}
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!API_TOKEN) return next(); // unconfigured → open (dev fallback)
+  if (req.method === "OPTIONS") return next(); // CORS preflights pass through
+  if (!req.path.startsWith("/api/")) return next(); // only protect /api/* routes
+
+  const authHeader = req.headers["authorization"];
+  const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const queryToken = typeof req.query["token"] === "string" ? req.query["token"] : null;
+
+  if (headerToken === API_TOKEN || queryToken === API_TOKEN) return next();
+
+  res.status(401).json({ error: "Unauthorized" });
+});
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.use("/api", router);
+
+export default app;

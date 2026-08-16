@@ -1,0 +1,102 @@
+import numpy as np
+import pandas as pd
+
+
+def determine_directional_bias(df: pd.DataFrame):
+  """Evaluates Market Structure, Moving Average Stack, and ADX strength.
+
+  Returns 'BULL', 'BEAR', or 'NEUTRAL' (Chop/Range).
+  """
+  if len(df) < 50:
+    return "NEUTRAL", 0.0
+
+  close = df["close"]
+  high = df["high"]
+  low = df["low"]
+
+  # 1. Moving Average Alignment (9 EMA & 21 EMA)
+  ema_9 = close.ewm(span=9, adjust=False).mean()
+  ema_21 = close.ewm(span=21, adjust=False).mean()
+
+  ema_bullish = (close.iloc[-1] > ema_9.iloc[-1]) and (
+      ema_9.iloc[-1] > ema_21.iloc[-1]
+  )
+  ema_bearish = (close.iloc[-1] < ema_9.iloc[-1]) and (
+      ema_9.iloc[-1] < ema_21.iloc[-1]
+  )
+
+  # 2. EMA Slope (Ensures trend is moving, not flatlining)
+  ema_21_slope_up = ema_21.iloc[-1] > ema_21.iloc[-3]
+  ema_21_slope_down = ema_21.iloc[-1] < ema_21.iloc[-3]
+
+  # 3. Market Structure (Recent 20-bar Swing Points)
+  recent_highs = high.tail(20)
+  recent_lows = low.tail(20)
+
+  higher_high = recent_highs.iloc[-1] >= recent_highs.max() * 0.998
+  higher_low = recent_lows.iloc[-1] > recent_lows.min()
+
+  lower_high = recent_highs.iloc[-1] < recent_highs.max()
+  lower_low = recent_lows.iloc[-1] <= recent_lows.min() * 1.002
+
+  # 4. Synthesize Bias
+  bias = "NEUTRAL"
+  if ema_bullish and ema_21_slope_up and higher_low:
+    bias = "BULL"
+  elif ema_bearish and ema_21_slope_down and lower_high:
+    bias = "BEAR"
+
+  return bias
+
+
+def evaluate_timeframe_alignment_with_bias(tf_dict: dict):
+  """Combines Directional Bias + Volume Expansion (RVOL) + Volatility (ATR)."""
+  states = {}
+  signals = []
+
+  for tf, tf_df in tf_dict.items():
+    if len(tf_df) < 50:
+      continue
+
+    # Directional Bias Evaluation
+    bias = determine_directional_bias(tf_df)
+
+    # Volume Expansion (RVOL > 1.5)
+    vol_ma = tf_df["volume"].rolling(14).mean().iloc[-1]
+    rvol = tf_df["volume"].iloc[-1] / vol_ma if vol_ma > 0 else 0
+    vol_spike = rvol > 1.5
+
+    # Volatility (ATR)
+    tr = np.maximum(
+        tf_df["high"] - tf_df["low"],
+        np.maximum(
+            abs(tf_df["high"] - tf_df["close"].shift(1)),
+            abs(tf_df["low"] - tf_df["close"].shift(1)),
+        ),
+    )
+    atr = tr.rolling(14).mean().iloc[-1]
+
+    states[tf] = {
+        "direction": bias,
+        "rvol": round(float(rvol), 2),
+        "atr": round(float(atr), 2),
+        "vol_spike": bool(vol_spike),
+    }
+
+    signals.append((bias, vol_spike))
+
+  # Check Full Alignment: All 4 TFs have matching non-neutral bias AND volume expansion
+  if len(signals) == 4:
+    biases = [s[0] for s in signals]
+    vol_spikes = [s[1] for s in signals]
+
+    all_vol_active = all(vol_spikes)
+    all_bull = all(b == "BULL" for b in biases)
+    all_bear = all(b == "BEAR" for b in biases)
+
+    if all_vol_active and all_bull:
+      return "STRONG_BUY_ALIGNMENT", states
+    elif all_vol_active and all_bear:
+      return "STRONG_SELL_ALIGNMENT", states
+
+  return "NEUTRAL_NO_ALIGNMENT", states

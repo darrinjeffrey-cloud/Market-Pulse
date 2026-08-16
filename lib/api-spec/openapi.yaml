@@ -3,20 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Sales dashboard API for retail revenue tracking by region, month, and category
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: sales
+    description: Sales and revenue data
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +25,310 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /sales/summary:
+    get:
+      operationId: getSalesSummary
+      tags: [sales]
+      summary: Overall KPI summary — total revenue, orders, avg order value, growth vs prior year
+      responses:
+        "200":
+          description: Summary KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesSummary"
+
+  /sales/monthly:
+    get:
+      operationId: getMonthlySales
+      tags: [sales]
+      summary: Revenue by month for the current and prior year
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Calendar year (defaults to current year)
+      responses:
+        "200":
+          description: Monthly revenue series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyRevenue"
+
+  /sales/by-region:
+    get:
+      operationId: getSalesByRegion
+      tags: [sales]
+      summary: Revenue and order count broken down by region
+      responses:
+        "200":
+          description: Per-region revenue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RegionRevenue"
+
+  /sales/by-category:
+    get:
+      operationId: getSalesByCategory
+      tags: [sales]
+      summary: Revenue and order count broken down by product category
+      responses:
+        "200":
+          description: Per-category revenue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryRevenue"
+
+  /sales/transactions:
+    get:
+      operationId: getSalesTransactions
+      tags: [sales]
+      summary: Paginated list of individual sales transactions for the detail table
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+          description: Page number (1-based, default 1)
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+          description: Rows per page (default 50)
+        - name: region
+          in: query
+          schema:
+            type: string
+          description: Filter by region name
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by product category
+        - name: month
+          in: query
+          schema:
+            type: integer
+          description: Filter by month number (1-12)
+      responses:
+        "200":
+          description: Paginated transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
+
+  /sales/top-products:
+    get:
+      operationId: getTopProducts
+      tags: [sales]
+      summary: Top 10 products by revenue
+      responses:
+        "200":
+          description: Top products list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductRevenue"
+
+  /sales/region-monthly:
+    get:
+      operationId: getRegionMonthlySales
+      tags: [sales]
+      summary: Revenue series per region across all months — for a stacked/grouped area chart
+      responses:
+        "200":
+          description: Region × month matrix
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RegionMonthlyRow"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    SalesSummary:
+      type: object
+      required:
+        - totalRevenue
+        - totalOrders
+        - avgOrderValue
+        - revenueGrowthPct
+        - ordersGrowthPct
+        - avgOrderValueGrowthPct
+        - topRegion
+        - topCategory
+      properties:
+        totalRevenue:
+          type: number
+          description: Total revenue YTD in dollars
+        totalOrders:
+          type: integer
+          description: Total number of orders YTD
+        avgOrderValue:
+          type: number
+          description: Average order value in dollars
+        revenueGrowthPct:
+          type: number
+          description: Revenue growth vs prior year period (percentage points)
+        ordersGrowthPct:
+          type: number
+          description: Orders growth vs prior year (percentage points)
+        avgOrderValueGrowthPct:
+          type: number
+          description: AOV growth vs prior year (percentage points)
+        topRegion:
+          type: string
+          description: Name of the top-performing region by revenue
+        topCategory:
+          type: string
+          description: Name of the top-performing product category
+
+    MonthlyRevenue:
+      type: object
+      required: [month, monthName, revenue, orders, priorYearRevenue]
+      properties:
+        month:
+          type: integer
+          description: Month number 1-12
+        monthName:
+          type: string
+          description: Short month name (Jan, Feb …)
+        revenue:
+          type: number
+        orders:
+          type: integer
+        priorYearRevenue:
+          type: number
+
+    RegionRevenue:
+      type: object
+      required: [region, revenue, orders, growthPct, share]
+      properties:
+        region:
+          type: string
+        revenue:
+          type: number
+        orders:
+          type: integer
+        growthPct:
+          type: number
+          description: YoY growth percentage
+        share:
+          type: number
+          description: Share of total revenue (0-100)
+
+    CategoryRevenue:
+      type: object
+      required: [category, revenue, orders, growthPct, share]
+      properties:
+        category:
+          type: string
+        revenue:
+          type: number
+        orders:
+          type: integer
+        growthPct:
+          type: number
+        share:
+          type: number
+
+    SalesTransaction:
+      type: object
+      required:
+        - id
+        - date
+        - region
+        - category
+        - product
+        - quantity
+        - unitPrice
+        - revenue
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          description: ISO date string
+        region:
+          type: string
+        category:
+          type: string
+        product:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        revenue:
+          type: number
+
+    TransactionPage:
+      type: object
+      required: [data, total, page, pageSize]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SalesTransaction"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    ProductRevenue:
+      type: object
+      required: [product, category, revenue, orders, growthPct]
+      properties:
+        product:
+          type: string
+        category:
+          type: string
+        revenue:
+          type: number
+        orders:
+          type: integer
+        growthPct:
+          type: number
+
+    RegionMonthlyRow:
+      type: object
+      required: [monthName, month]
+      properties:
+        monthName:
+          type: string
+        month:
+          type: integer
+        northeast:
+          type: number
+        southeast:
+          type: number
+        midwest:
+          type: number
+        west:
+          type: number
+        southwest:
+          type: number

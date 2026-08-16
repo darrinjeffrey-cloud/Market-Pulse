@@ -1,0 +1,171 @@
+import asyncio
+from collections import deque
+import databento as db
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import numpy as np
+import pandas as pd
+
+app = FastAPI()
+
+# Stores rolling 1m bars in memory (e.g., last 1440 bars = 24 hours)
+BAR_BUFFER = deque(maxlen=1440)
+CONNECTED_CLIENTS = set()
+
+
+class ConnectionManager:
+
+  async def connect(self, websocket: WebSocket):
+    await websocket.accept()
+    CONNECTED_CLIENTS.add(websocket)
+
+  def disconnect(self, websocket: WebSocket):
+    CONNECTED_CLIENTS.discard(websocket)
+
+  async def broadcast(self, data: dict):
+    for client in list(CONNECTED_CLIENTS):
+      try:
+        await client.send_json(data)
+      except Exception:
+        self.disconnect(client)
+
+
+manager = ConnectionManager()
+
+
+def process_and_check_alignment():
+  if len(BAR_BUFFER) < 60:  # Wait until enough bars are available
+    return None
+
+  # Convert deque buffer to DataFrame
+  df = pd.DataFrame(list(BAR_BUFFER))
+  df['ts_event'] = pd.to_datetime(df['ts_event'])
+  df.set_index('ts_event', inplace=True)
+
+  # Resample into required timeframes
+  tf_dict = {
+      '1m': df,
+      '5m': (
+          df.resample('5min')
+          .agg({
+              'open': 'first',
+              'high': 'max',
+              'low': 'min',
+              'close': 'last',
+              'volume': 'sum',
+          })
+          .dropna()
+      ),
+      '15m': (
+          df.resample('15min')
+          .agg({
+              'open': 'first',
+              'high': 'max',
+              'low': 'min',
+              'close': 'last',
+              'volume': 'sum',
+          })
+          .dropna()
+      ),
+      '1h': (
+          df.resample('1h')
+          .agg({
+              'open': 'first',
+              'high': 'max',
+              'low': 'min',
+              'close': 'last',
+              'volume': 'sum',
+          })
+          .dropna()
+      ),
+  }
+
+  states = {}
+  signals = []
+
+  for tf, tf_df in tf_dict.items():
+    if len(tf_df) < 14:
+      continue
+
+    # Volume Spike (RVOL > 1.5)
+    vol_ma = tf_df['volume'].rolling(14).mean().iloc[-1]
+    rvol = tf_df['volume'].iloc[-1] / vol_ma if vol_ma > 0 else 0
+
+    # Volatility Expansion (ATR)
+    tr = np.maximum(
+        tf_df['high'] - tf_df['low'],
+        np.maximum(
+            abs(tf_df['high'] - tf_df['close'].shift(1)),
+            abs(tf_df['low'] - tf_df['close'].shift(1)),
+        ),
+    )
+    atr = tr.rolling(14).mean().iloc[-1]
+
+    # Trend Bias
+    sma = tf_df['close'].rolling(20).mean().iloc[-1]
+    is_bullish = tf_df['close'].iloc[-1] > sma
+
+    has_volume_spike = rvol > 1.5
+    states[tf] = {
+        'rvol': round(rvol, 2),
+        'atr': round(atr, 2),
+        'direction': 'BULL' if is_bullish else 'BEAR',
+        'vol_spike': bool(has_volume_spike),
+    }
+
+    signals.append((has_volume_spike, is_bullish))
+
+  # Evaluate alignment across all 4 timeframes
+  aligned_signal = None
+  if len(signals) == 4:
+    all_vol = all(s[0] for s in signals)
+    all_bull = all(s[1] for s in signals)
+    all_bear = all(not s[1] for s in signals)
+
+    if all_vol and all_bull:
+      aligned_signal = 'BULLISH_ALIGNMENT'
+    elif all_vol and all_bear:
+      aligned_signal = 'BEARISH_ALIGNMENT'
+
+  return {'timeframes': states, 'signal': aligned_signal}
+
+
+async def stream_databento_live():
+  # Replace with your actual Databento API Key
+  live_client = db.Live(key='YOUR_DATABENTO_API_KEY')
+
+  # Subscribe to 1-minute OHLCV bars for Front-Month E-mini S&P (ES.c.0)
+  live_client.subscribe(
+      dataset='GLBX.MDP3', schema='ohlcv-1m', symbols='ES.c.0'
+  )
+
+  # Stream incoming record tuples asynchronously
+  async for record in live_client:
+    BAR_BUFFER.append({
+        'ts_event': record.ts_event,
+        'open': record.open / 1e9,  # Convert fixed-precision prices
+        'high': record.high / 1e9,
+        'low': record.low / 1e9,
+        'close': record.close / 1e9,
+        'volume': record.volume,
+    })
+
+    # Evaluate indicators and broadcast update on every new bar
+    payload = process_and_check_alignment()
+    if payload:
+      await manager.broadcast(payload)
+
+
+@app.on_event('startup')
+async def startup_event():
+  # Run Databento listener in background
+  asyncio.create_task(stream_databento_live())
+
+
+@app.websocket('/ws/market')
+async def websocket_endpoint(websocket: WebSocket):
+  await manager.connect(websocket)
+  try:
+    while True:
+      await websocket.receive_text()  # Keep connection alive
+  except WebSocketDisconnect:
+    manager.disconnect(websocket)

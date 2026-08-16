@@ -1,0 +1,268 @@
+import asyncio
+from collections import deque
+from datetime import datetime, timedelta, timezone
+import databento as db
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import numpy as np
+import pandas as pd
+
+app = FastAPI(title="Multi-Symbol Futures Alignment Engine")
+
+# --- CONFIGURATION ---
+DATABENTO_API_KEY = "YOUR_DATABENTO_API_KEY"
+DATASET = "GLBX.MDP3"
+
+# Supported Symbols & Multipliers ($ per point)
+SYMBOLS = ["ES.c.0", "NQ.c.0", "MES.c.0", "MNQ.c.0"]
+MULTIPLIERS = {
+    "ES.c.0": 50.0,
+    "NQ.c.0": 20.0,
+    "MES.c.0": 5.0,
+    "MNQ.c.0": 2.0,
+}
+
+# Per-symbol rolling buffers (1440 bars = 24 hours per symbol)
+BUFFERS = {sym: deque(maxlen=1440) for sym in SYMBOLS}
+CONNECTED_CLIENTS = set()
+
+
+# --- WEBSOCKET MANAGER ---
+class ConnectionManager:
+
+  async def connect(self, websocket: WebSocket):
+    await websocket.accept()
+    CONNECTED_CLIENTS.add(websocket)
+
+  def disconnect(self, websocket: WebSocket):
+    CONNECTED_CLIENTS.discard(websocket)
+
+  async def broadcast(self, data: dict):
+    for client in list(CONNECTED_CLIENTS):
+      try:
+        await client.send_json(data)
+      except Exception:
+        self.disconnect(client)
+
+
+manager = ConnectionManager()
+
+
+# --- CALCULATIONS ENGINE ---
+def calculate_trade_levels(
+    symbol: str,
+    entry_price: float,
+    atr_5m: float,
+    direction: str,
+    df_5m: pd.DataFrame,
+):
+  recent_5m = df_5m.tail(12)
+  swing_low = recent_5m["low"].min()
+  swing_high = recent_5m["high"].max()
+
+  # Dynamic ATR Buffer
+  atr_buffer = atr_5m * 1.5
+  point_val = MULTIPLIERS.get(symbol, 1.0)
+
+  if direction == "BULL":
+    stop_loss = min(swing_low, entry_price - atr_buffer)
+    risk_pts = entry_price - stop_loss
+    tp1 = entry_price + (risk_pts * 1.5)
+    tp2 = entry_price + (risk_pts * 2.0)
+  else:  # BEAR
+    stop_loss = max(swing_high, entry_price + atr_buffer)
+    risk_pts = stop_loss - entry_price
+    tp1 = entry_price - (risk_pts * 1.5)
+    tp2 = entry_price - (risk_pts * 2.0)
+
+  return {
+      "entry": round(entry_price, 2),
+      "stop_loss": round(stop_loss, 2),
+      "risk_pts": round(risk_pts, 2),
+      "risk_dollars_per_contract": round(risk_pts * point_val, 2),
+      "tp1": round(tp1, 2),
+      "tp2": round(tp2, 2),
+  }
+
+
+def process_symbol_data(symbol: str):
+  buffer = BUFFERS[symbol]
+  if len(buffer) < 60:
+    return None
+
+  df = pd.DataFrame(list(buffer))
+  df["ts_event"] = pd.to_datetime(df["ts_event"])
+  df.set_index("ts_event", inplace=True)
+
+  agg_rules = {
+      "open": "first",
+      "high": "max",
+      "low": "min",
+      "close": "last",
+      "volume": "sum",
+  }
+
+  tf_dict = {
+      "1m": df,
+      "5m": df.resample("5min").agg(agg_rules).dropna(),
+      "15m": df.resample("15min").agg(agg_rules).dropna(),
+      "1h": df.resample("1h").agg(agg_rules).dropna(),
+  }
+
+  tf_states = {}
+  signals = []
+  latest_close = df["close"].iloc[-1]
+  atr_5m_val = 0.0
+
+  for tf, tf_df in tf_dict.items():
+    if len(tf_df) < 14:
+      continue
+
+    # Volume Spike (RVOL > 1.5)
+    vol_ma = tf_df["volume"].rolling(14).mean().iloc[-1]
+    rvol = tf_df["volume"].iloc[-1] / vol_ma if vol_ma > 0 else 0
+
+    # ATR Volatility
+    tr = np.maximum(
+        tf_df["high"] - tf_df["low"],
+        np.maximum(
+            abs(tf_df["high"] - tf_df["close"].shift(1)),
+            abs(tf_df["low"] - tf_df["close"].shift(1)),
+        ),
+    )
+    atr = tr.rolling(14).mean().iloc[-1]
+    if tf == "5m":
+      atr_5m_val = atr
+
+    # Trend Bias (SMA 20)
+    sma = tf_df["close"].rolling(20).mean().iloc[-1]
+    is_bullish = tf_df["close"].iloc[-1] > sma
+
+    vol_spike = rvol > 1.5
+    tf_states[tf] = {
+        "rvol": round(float(rvol), 2),
+        "atr": round(float(atr), 2),
+        "direction": "BULL" if is_bullish else "BEAR",
+        "vol_spike": bool(vol_spike),
+    }
+
+    signals.append((vol_spike, is_bullish))
+
+  # Evaluate alignment across all 4 timeframes
+  aligned_signal = None
+  execution_setup = None
+
+  if len(signals) == 4:
+    all_vol = all(s[0] for s in signals)
+    all_bull = all(s[1] for s in signals)
+    all_bear = all(not s[1] for s in signals)
+
+    if all_vol and all_bull:
+      aligned_signal = "BULLISH_ALIGNMENT"
+      execution_setup = calculate_trade_levels(
+          symbol, latest_close, atr_5m_val, "BULL", tf_dict["5m"]
+      )
+    elif all_vol and all_bear:
+      aligned_signal = "BEARISH_ALIGNMENT"
+      execution_setup = calculate_trade_levels(
+          symbol, latest_close, atr_5m_val, "BEAR", tf_dict["5m"]
+      )
+
+  return {
+      "symbol": symbol,
+      "last_price": round(float(latest_close), 2),
+      "signal": aligned_signal,
+      "execution_setup": execution_setup,
+      "timeframes": tf_states,
+  }
+
+
+def evaluate_all_symbols():
+  """Generates a composite market update payload across ES, NQ, MES, and MNQ."""
+  symbols_data = {}
+  for sym in SYMBOLS:
+    result = process_symbol_data(sym)
+    if result:
+      symbols_data[sym] = result
+
+  return {
+      "timestamp": datetime.now(timezone.utc).isoformat(),
+      "markets": symbols_data,
+  }
+
+
+# --- DATA HYDRATION & LIVE MULTI-STREAM ---
+def hydrate_all_buffers():
+  print("Hydrating buffers for ES, NQ, MES, and MNQ...")
+  hist_client = db.Historical(DATABENTO_API_KEY)
+  end_time = datetime.now(timezone.utc)
+  start_time = end_time - timedelta(hours=24)
+
+  data = hist_client.timeseries.get_range(
+      dataset=DATASET,
+      schema="ohlcv-1m",
+      symbols=SYMBOLS,
+      start=start_time.strftime("%Y-%m-%dT%H:%M:%S"),
+      end=end_time.strftime("%Y-%m-%dT%H:%M:%S"),
+  )
+
+  df = data.to_df()
+  for ts, row in df.iterrows():
+    sym = row["symbol"] if "symbol" in row else SYMBOLS[0]
+    if sym in BUFFERS:
+      BUFFERS[sym].append({
+          "ts_event": ts,
+          "open": row["open"] / 1e9,
+          "high": row["high"] / 1e9,
+          "low": row["low"] / 1e9,
+          "close": row["close"] / 1e9,
+          "volume": row["volume"],
+      })
+  print("Hydration complete.")
+
+
+async def stream_databento_live():
+  live_client = db.Live(key=DATABENTO_API_KEY)
+
+  # Subscribe to all 4 symbols in a single TCP socket stream
+  live_client.subscribe(dataset=DATASET, schema="ohlcv-1m", symbols=SYMBOLS)
+
+  async for record in live_client:
+    # Resolve symbol from record payload
+    sym = SYMBOLS[0]
+    if hasattr(record, "symbol"):
+      sym = record.symbol
+
+    if sym in BUFFERS:
+      BUFFERS[sym].append({
+          "ts_event": record.ts_event,
+          "open": record.open / 1e9,
+          "high": record.high / 1e9,
+          "low": record.low / 1e9,
+          "close": record.close / 1e9,
+          "volume": record.volume,
+      })
+
+    # Broadcast updated state across all symbols
+    payload = evaluate_all_symbols()
+    if payload["markets"]:
+      await manager.broadcast(payload)
+
+
+@app.on_event("startup")
+async def startup_event():
+  hydrate_all_buffers()
+  asyncio.create_task(stream_databento_live())
+
+
+@app.websocket("/ws/market")
+async def websocket_endpoint(websocket: WebSocket):
+  await manager.connect(websocket)
+  initial_payload = evaluate_all_symbols()
+  if initial_payload["markets"]:
+    await websocket.send_json(initial_payload)
+
+  try:
+    while True:
+      await websocket.receive_text()
+  except WebSocketDisconnect:
+    manager.disconnect(websocket)

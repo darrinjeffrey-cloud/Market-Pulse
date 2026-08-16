@@ -1,0 +1,161 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: market
+    description: Live futures market monitoring
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /market/snapshot:
+    get:
+      operationId: getMarketSnapshot
+      tags: [market]
+      summary: Get the latest futures market snapshot
+      description: Returns the latest multi-timeframe volume, volatility, trend, and alignment state for supported futures symbols.
+      responses:
+        "200":
+          description: Latest market state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketSnapshot"
+        "503":
+          description: Market data is not currently available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /market/stream:
+    get:
+      operationId: streamMarketSnapshot
+      tags: [market]
+      summary: Stream market snapshots
+      description: Sends server-sent events containing updated market snapshots as new data becomes available.
+      responses:
+        "200":
+          description: Server-sent market snapshot stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    TimeframeState:
+      type: object
+      properties:
+        rvol:
+          type: number
+        atr:
+          type: number
+        direction:
+          type: string
+          enum: [BULL, BEAR, NEUTRAL]
+        volSpike:
+          type: boolean
+        close:
+          type: number
+        volume:
+          type: number
+        adx:
+          type: number
+          description: "ADX 0–100: <20 ranging, 20–40 trending, >40 strong"
+        rsi:
+          type: number
+          description: "RSI-14 0–100: >50 bullish momentum, <50 bearish"
+        vwap:
+          type: number
+          description: "VWAP anchored to current UTC calendar day"
+        isRTH:
+          type: boolean
+          description: "True inside US equity futures RTH (13:30–20:00 UTC)"
+        confluenceScore:
+          type: number
+          description: "0–5 count of bias factors confirming the active direction"
+        lastUpdated:
+          type: string
+          format: date-time
+          description: "ISO-8601 timestamp of the most recent bar used to compute this timeframe"
+      required: [rvol, atr, direction, volSpike, close, volume, adx, rsi, vwap, isRTH, confluenceScore, lastUpdated]
+    TradeSetup:
+      type: object
+      properties:
+        entry:
+          type: number
+        stopLoss:
+          type: number
+        riskPts:
+          type: number
+        riskDollarsPerContract:
+          type: number
+        tp1:
+          type: number
+        tp2:
+          type: number
+      required: [entry, stopLoss, riskPts, riskDollarsPerContract, tp1, tp2]
+    MarketState:
+      type: object
+      properties:
+        symbol:
+          type: string
+        lastPrice:
+          type: number
+        perTimeframeSetup:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TradeSetup"
+        timeframes:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TimeframeState"
+      required: [symbol, lastPrice, timeframes]
+    MarketSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [databento, unavailable]
+        markets:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/MarketState"
+        message:
+          type: [string, "null"]
+      required: [timestamp, source, markets, message]
+
