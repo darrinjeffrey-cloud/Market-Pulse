@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getAuthHeaders, getStoredToken } from '@/lib/auth';
+import { InvitePanel } from './InvitePanel';
 import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
 import {
@@ -23,6 +24,7 @@ import {
   TrendingDown,
   TrendingUp,
   Trash2,
+  UserPlus,
   WifiOff,
   X,
   Zap,
@@ -1069,9 +1071,21 @@ export function MarketDashboard() {
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [streamSnapshot, setStreamSnapshot] = useState<MarketSnapshot | null>(null);
   const [streamAttempt, setStreamAttempt] = useState(0);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   // Optimistic watchlist: symbols added/removed via dialog before SSE reflects them
   const [extraWatched, setExtraWatched] = useState<Set<string>>(new Set());
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
+
+  // Determine role (admin vs guest) by validating the stored token
+  useEffect(() => {
+    const token = getStoredToken();
+    if (!token) return;
+    fetch('/api/auth/validate', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((body: { role?: string }) => setIsAdmin(body.role === 'admin'))
+      .catch(() => {});
+  }, []);
   const [activeContract, setActiveContractRaw] = useState<string | null>(() => {
     try { return localStorage.getItem('activeContract'); } catch { return null; }
   });
@@ -1238,6 +1252,17 @@ export function MarketDashboard() {
                 });
               }}
             />
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                aria-label="Generate guest invite link"
+                title="Invite a guest"
+                className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-[hsl(var(--primary)/.45)] hover:text-[hsl(var(--primary))] active:scale-95"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={retryAll}
@@ -1251,6 +1276,7 @@ export function MarketDashboard() {
         </div>
         <div className="h-px overflow-hidden bg-border/30"><div className="fam-scanline h-px w-1/3" /></div>
       </header>
+      <InvitePanel open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <DisconnectedNotice streamState={streamState} onReconnect={() => setStreamAttempt((value) => value + 1)} />
       <main className="mx-auto max-w-[1560px] px-4 pb-12 pt-7 sm:px-6 lg:px-8">
         <div className="fam-rise mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">

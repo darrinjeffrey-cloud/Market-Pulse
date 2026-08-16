@@ -1,0 +1,1 @@
+- [Guest auth pattern](guest-auth.md) — JWT guest invites signed with SESSION_SECRET; admin-only invite endpoint; URL token auto-consumed on load.

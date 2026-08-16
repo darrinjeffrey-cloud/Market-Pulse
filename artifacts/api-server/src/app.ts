@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { verifyGuestToken } from "./lib/guest-auth";
 
 const app: Express = express();
 
@@ -51,7 +52,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   const queryToken = typeof req.query["token"] === "string" ? req.query["token"] : null;
 
+  // Accept the raw admin token
   if (headerToken === API_TOKEN || queryToken === API_TOKEN) return next();
+
+  // Accept a valid signed guest JWT
+  const raw = headerToken ?? queryToken;
+  if (raw && verifyGuestToken(raw)) return next();
 
   res.status(401).json({ error: "Unauthorized" });
 });
