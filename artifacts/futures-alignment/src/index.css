@@ -67,7 +67,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* FAM uses a deep ink terminal canvas with chartreuse conviction signals. */
+/* FAM — Dark & Gold: deep black canvas, amber-gold conviction signals. */
 :root {
   --button-outline: rgba(0, 0, 0, 0.1);
   --badge-outline: rgba(0, 0, 0, 0.05);
@@ -79,37 +79,37 @@
   --elevate-1: rgba(0, 0, 0, 0.03);
   --elevate-2: rgba(0, 0, 0, 0.08);
 
-  --background: 222 32% 8%;
-  --foreground: 210 25% 91%;
-  --border: 219 22% 22%;
-  --card: 221 27% 12%;
-  --card-foreground: 210 25% 91%;
-  --card-border: 219 24% 22%;
-  --sidebar: 223 35% 7%;
-  --sidebar-foreground: 210 21% 74%;
-  --sidebar-border: 219 22% 18%;
-  --sidebar-primary: 58 90% 66%;
-  --sidebar-primary-foreground: 222 32% 8%;
-  --sidebar-accent: 220 26% 14%;
-  --sidebar-accent-foreground: 210 25% 91%;
-  --sidebar-ring: 58 90% 66%;
-  --popover: 221 27% 12%;
-  --popover-foreground: 210 25% 91%;
-  --popover-border: 219 24% 25%;
-  --primary: 58 90% 66%;
-  --primary-foreground: 222 32% 8%;
-  --secondary: 220 25% 17%;
-  --secondary-foreground: 210 25% 91%;
-  --muted: 220 24% 15%;
-  --muted-foreground: 216 15% 57%;
-  --accent: 187 85% 63%;
-  --accent-foreground: 222 32% 8%;
+  --background: 20 14% 5%;
+  --foreground: 38 22% 92%;
+  --border: 30 12% 18%;
+  --card: 25 14% 8%;
+  --card-foreground: 38 22% 92%;
+  --card-border: 30 13% 16%;
+  --sidebar: 20 18% 4%;
+  --sidebar-foreground: 36 14% 70%;
+  --sidebar-border: 28 12% 13%;
+  --sidebar-primary: 43 96% 54%;
+  --sidebar-primary-foreground: 20 14% 5%;
+  --sidebar-accent: 28 14% 11%;
+  --sidebar-accent-foreground: 38 22% 92%;
+  --sidebar-ring: 43 96% 54%;
+  --popover: 25 14% 8%;
+  --popover-foreground: 38 22% 92%;
+  --popover-border: 30 13% 20%;
+  --primary: 43 96% 54%;
+  --primary-foreground: 20 14% 5%;
+  --secondary: 28 13% 14%;
+  --secondary-foreground: 38 22% 92%;
+  --muted: 25 11% 11%;
+  --muted-foreground: 32 9% 52%;
+  --accent: 38 90% 62%;
+  --accent-foreground: 20 14% 5%;
   --destructive: 7 77% 64%;
-  --destructive-foreground: 222 32% 8%;
-  --input: 219 22% 24%;
-  --ring: 58 90% 66%;
-  --chart-1: 58 90% 66%;
-  --chart-2: 187 85% 63%;
+  --destructive-foreground: 20 14% 5%;
+  --input: 28 13% 16%;
+  --ring: 43 96% 54%;
+  --chart-1: 43 96% 54%;
+  --chart-2: 38 90% 62%;
   --chart-3: 7 77% 64%;
   --chart-4: 145 57% 55%;
   --chart-5: 270 55% 72%;
@@ -200,37 +200,37 @@
   --elevate-1: rgba(255, 255, 255, 0.04);
   --elevate-2: rgba(255, 255, 255, 0.09);
 
-  --background: 222 32% 8%;
-  --foreground: 210 25% 91%;
-  --border: 219 22% 22%;
-  --card: 221 27% 12%;
-  --card-foreground: 210 25% 91%;
-  --card-border: 219 24% 22%;
-  --sidebar: 223 35% 7%;
-  --sidebar-foreground: 210 21% 74%;
-  --sidebar-border: 219 22% 18%;
-  --sidebar-primary: 58 90% 66%;
-  --sidebar-primary-foreground: 222 32% 8%;
-  --sidebar-accent: 220 26% 14%;
-  --sidebar-accent-foreground: 210 25% 91%;
-  --sidebar-ring: 58 90% 66%;
-  --popover: 221 27% 12%;
-  --popover-foreground: 210 25% 91%;
-  --popover-border: 219 24% 25%;
-  --primary: 58 90% 66%;
-  --primary-foreground: 222 32% 8%;
-  --secondary: 220 25% 17%;
-  --secondary-foreground: 210 25% 91%;
-  --muted: 220 24% 15%;
-  --muted-foreground: 216 15% 57%;
-  --accent: 187 85% 63%;
-  --accent-foreground: 222 32% 8%;
+  --background: 20 14% 5%;
+  --foreground: 38 22% 92%;
+  --border: 30 12% 18%;
+  --card: 25 14% 8%;
+  --card-foreground: 38 22% 92%;
+  --card-border: 30 13% 16%;
+  --sidebar: 20 18% 4%;
+  --sidebar-foreground: 36 14% 70%;
+  --sidebar-border: 28 12% 13%;
+  --sidebar-primary: 43 96% 54%;
+  --sidebar-primary-foreground: 20 14% 5%;
+  --sidebar-accent: 28 14% 11%;
+  --sidebar-accent-foreground: 38 22% 92%;
+  --sidebar-ring: 43 96% 54%;
+  --popover: 25 14% 8%;
+  --popover-foreground: 38 22% 92%;
+  --popover-border: 30 13% 20%;
+  --primary: 43 96% 54%;
+  --primary-foreground: 20 14% 5%;
+  --secondary: 28 13% 14%;
+  --secondary-foreground: 38 22% 92%;
+  --muted: 25 11% 11%;
+  --muted-foreground: 32 9% 52%;
+  --accent: 38 90% 62%;
+  --accent-foreground: 20 14% 5%;
   --destructive: 7 77% 64%;
-  --destructive-foreground: 222 32% 8%;
-  --input: 219 22% 24%;
-  --ring: 58 90% 66%;
-  --chart-1: 58 90% 66%;
-  --chart-2: 187 85% 63%;
+  --destructive-foreground: 20 14% 5%;
+  --input: 28 13% 16%;
+  --ring: 43 96% 54%;
+  --chart-1: 43 96% 54%;
+  --chart-2: 38 90% 62%;
   --chart-3: 7 77% 64%;
   --chart-4: 145 57% 55%;
   --chart-5: 270 55% 72%;
@@ -264,8 +264,8 @@
     @apply font-sans antialiased bg-background text-foreground;
     min-width: 320px;
     background-image:
-      linear-gradient(hsl(219 22% 24% / 0.13) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(219 22% 24% / 0.13) 1px, transparent 1px);
+      linear-gradient(hsl(30 12% 20% / 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(30 12% 20% / 0.12) 1px, transparent 1px);
     background-size: 44px 44px;
     background-position: center top;
   }
@@ -311,7 +311,7 @@
 .fam-display { font-family: var(--app-font-sans); letter-spacing: -.04em; }
 .fam-card {
   border: 1px solid hsl(var(--card-border));
-  background: linear-gradient(145deg, hsl(var(--card) / .98), hsl(222 25% 10% / .92));
+  background: linear-gradient(145deg, hsl(var(--card) / .98), hsl(25 12% 6% / .92));
   box-shadow: var(--shadow-sm);
 }
 .fam-card:hover {
