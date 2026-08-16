@@ -82,7 +82,7 @@ export default function LoginScreen({ onLogin }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#100D08',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -99,25 +99,25 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    color: '#fff',
+    color: '#EDE8DE',
     fontSize: 22,
     fontWeight: '700',
     letterSpacing: -0.5,
     marginBottom: 6,
   },
   subtitle: {
-    color: '#71717a',
+    color: '#8B7A58',
     fontSize: 13,
     marginBottom: 32,
     textAlign: 'center',
   },
   input: {
     width: '100%',
-    backgroundColor: '#18181b',
+    backgroundColor: '#17120B',
     borderWidth: 1,
-    borderColor: '#3f3f46',
+    borderColor: '#2B2015',
     borderRadius: 8,
-    color: '#fff',
+    color: '#EDE8DE',
     fontSize: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -131,9 +131,9 @@ const styles = StyleSheet.create({
   },
   button: {
     width: '100%',
-    backgroundColor: '#27272a',
+    backgroundColor: '#201808',
     borderWidth: 1,
-    borderColor: '#3f3f46',
+    borderColor: '#2B2015',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
@@ -143,12 +143,12 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   buttonText: {
-    color: '#fff',
+    color: '#EDE8DE',
     fontSize: 14,
     fontWeight: '500',
   },
   hint: {
-    color: '#3f3f46',
+    color: '#2B2015',
     fontSize: 11,
   },
 });

@@ -1,6 +1,6 @@
 /**
- * Dark terminal palette — mirrors the web app's "deep ink" aesthetic.
- * Derived from artifacts/futures-alignment/src/index.css
+ * Dark & Gold palette — mirrors the web app's amber-gold aesthetic.
+ * Derived from artifacts/futures-alignment/src/index.css (Dark & Gold theme).
  *
  * HSL values from the web app's CSS variables, converted to hex.
  * The app always uses the dark palette (userInterfaceStyle: "dark").
@@ -8,41 +8,41 @@
 
 const palette = {
   // Core surfaces
-  background: '#0e121b',      // HSL(222, 32%, 8%)
-  foreground: '#e2eaf1',      // HSL(210, 25%, 91%)
-  card: '#161c27',            // HSL(221, 27%, 12%)
-  cardForeground: '#e2eaf1',
-  border: '#2c3545',          // HSL(219, 22%, 22%)
+  background: '#100D08',      // HSL(20, 14%, 5%)
+  foreground: '#EDE8DE',      // HSL(38, 22%, 92%)
+  card: '#17120B',            // HSL(25, 14%, 8%)
+  cardForeground: '#EDE8DE',
+  border: '#2B2015',          // HSL(30, 12%, 18%)
 
   // Semantic aliases for compatibility with useColors() hooks
-  text: '#e2eaf1',
-  tint: '#f6f15a',
+  text: '#EDE8DE',
+  tint: '#F5A800',
 
-  // Primary: chartreuse-yellow conviction signals
-  primary: '#f6f15a',         // HSL(58, 90%, 66%)
-  primaryForeground: '#0e121b',
+  // Primary: amber-gold conviction signals
+  primary: '#F5A800',         // HSL(43, 96%, 54%)
+  primaryForeground: '#100D08',
 
   // Secondary / elevated surface
-  secondary: '#212836',       // HSL(220, 25%, 17%)
-  secondaryForeground: '#e2eaf1',
+  secondary: '#201808',       // HSL(28, 13%, 14%)
+  secondaryForeground: '#EDE8DE',
 
   // Muted / subdued
-  muted: '#1c2331',           // HSL(220, 24%, 15%)
-  mutedForeground: '#818ea2', // HSL(216, 15%, 57%)
+  muted: '#191209',           // HSL(25, 11%, 11%)
+  mutedForeground: '#8B7A58', // HSL(32, 9%, 52%)
 
-  // Accent: terminal cyan
-  accent: '#50ddf1',          // HSL(187, 85%, 63%)
-  accentForeground: '#0e121b',
+  // Accent: lighter gold
+  accent: '#E8A83A',          // HSL(38, 90%, 62%)
+  accentForeground: '#100D08',
 
-  // Destructive: coral/red
+  // Destructive: coral/red (unchanged)
   destructive: '#ea6c5d',     // HSL(7, 77%, 64%)
-  destructiveForeground: '#0e121b',
+  destructiveForeground: '#100D08',
 
   // Chart palette
   success: '#4bce81',         // HSL(145, 57%, 55%) — BULL green
   purple: '#a37fd4',          // HSL(270, 55%, 72%)
 
-  input: '#2c3545',
+  input: '#261D0D',
 };
 
 const colors = {
