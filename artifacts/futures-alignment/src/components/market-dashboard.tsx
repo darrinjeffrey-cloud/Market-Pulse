@@ -11,8 +11,10 @@ import {
   ChevronRight,
   CircleDashed,
   Clock3,
+  Copy,
   Database,
   Gauge,
+  Link2,
   Loader2,
   LogOut,
   Plus,
@@ -1045,6 +1047,158 @@ function FuturesSearchDialog({
   );
 }
 
+// ─── Invite link management ───────────────────────────────────────────────────
+
+interface InviteLink {
+  token: string;
+  url: string;
+  label: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+function timeLeft(expiresAt: string): string {
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return 'expired';
+  const h = Math.floor(ms / 3_600_000);
+  if (h < 24) return `${h}h left`;
+  return `${Math.floor(h / 24)}d left`;
+}
+
+function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [invites, setInvites] = useState<InviteLink[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [duration, setDuration] = useState('7d');
+  const [label, setLabel] = useState('');
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch('/api/invites', { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ invites: InviteLink[] }>)
+      .then((d) => setInvites(d.invites ?? []))
+      .catch(() => setInvites([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  async function createInvite() {
+    setCreating(true);
+    try {
+      const res = await fetch('/api/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ duration, label: label.trim() || undefined }),
+      });
+      const created = (await res.json()) as InviteLink;
+      setInvites((prev) => [created, ...prev]);
+      setLabel('');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function revokeInvite(token: string) {
+    await fetch(`/api/invites/${token}`, { method: 'DELETE', credentials: 'include' });
+    setInvites((prev) => prev.filter((i) => i.token !== token));
+  }
+
+  function copyLink(url: string, token: string) {
+    void navigator.clipboard.writeText(url);
+    setCopied(token);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="flex max-h-[80dvh] flex-col gap-0 overflow-hidden border-border bg-card p-0 sm:max-w-md">
+        <DialogHeader className="border-b border-border px-4 pb-3 pt-4">
+          <DialogTitle className="fam-display text-sm font-extrabold tracking-tight">
+            Invite links
+          </DialogTitle>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            Share a link for temporary read-only access. Links expire automatically.
+          </p>
+        </DialogHeader>
+
+        {/* Create form */}
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Label (optional)"
+            className="min-w-0 flex-1 rounded-md bg-background/50 px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 outline-none ring-1 ring-border focus:ring-[hsl(var(--primary)/.5)]"
+          />
+          <select
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            className="rounded-md bg-background/50 px-2 py-1.5 text-xs text-foreground outline-none ring-1 ring-border focus:ring-[hsl(var(--primary)/.5)]"
+          >
+            <option value="24h">24 h</option>
+            <option value="7d">7 d</option>
+            <option value="30d">30 d</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void createInvite()}
+            disabled={creating}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-[hsl(var(--primary)/.4)] bg-[hsl(var(--primary)/.08)] px-2.5 text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--primary))] transition-all hover:bg-[hsl(var(--primary)/.15)] disabled:opacity-40 active:scale-95"
+          >
+            {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+            Generate
+          </button>
+        </div>
+
+        {/* Link list */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : invites.length === 0 ? (
+            <p className="py-8 text-center text-xs text-muted-foreground">No active links yet.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {invites.map((inv) => (
+                <li key={inv.token} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs text-foreground">
+                      {inv.label ?? <span className="text-muted-foreground">No label</span>}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <Clock3 className="h-2.5 w-2.5 shrink-0" />
+                      {timeLeft(inv.expiresAt)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyLink(inv.url, inv.token)}
+                    title="Copy link"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-[hsl(var(--primary)/.4)] hover:text-[hsl(var(--primary))]"
+                  >
+                    {copied === inv.token ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void revokeInvite(inv.token)}
+                    title="Revoke link"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function MarketDashboard() {
   const snapshotQuery = useGetMarketSnapshot({
     query: {
@@ -1070,6 +1224,7 @@ export function MarketDashboard() {
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [streamSnapshot, setStreamSnapshot] = useState<MarketSnapshot | null>(null);
   const [streamAttempt, setStreamAttempt] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
   // Optimistic watchlist: symbols added/removed via dialog before SSE reflects them
   const [extraWatched, setExtraWatched] = useState<Set<string>>(new Set());
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
@@ -1249,6 +1404,15 @@ export function MarketDashboard() {
             </button>
             <button
               type="button"
+              onClick={() => setInviteOpen(true)}
+              aria-label="Invite links"
+              title="Invite links"
+              className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-[hsl(var(--primary)/.45)] hover:text-[hsl(var(--primary))] active:scale-95"
+            >
+              <Link2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
               onClick={async () => { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); window.location.reload(); }}
               aria-label="Sign out"
               title="Sign out"
@@ -1391,6 +1555,8 @@ export function MarketDashboard() {
           <div className="fam-mono flex items-center gap-2 uppercase tracking-[.1em]"><TrendingDown className="h-3 w-3" /> Signals are informational, not a trade instruction.</div>
         </footer>
       </main>
+
+      <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }

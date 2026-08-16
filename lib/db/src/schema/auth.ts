@@ -1,6 +1,19 @@
 import { sql } from 'drizzle-orm';
 import { index, jsonb, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core';
 
+export const inviteTokensTable = pgTable(
+  'invite_tokens',
+  {
+    token: varchar('token').primaryKey(),
+    label: varchar('label'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('IDX_invite_expires').on(table.expiresAt)],
+);
+
+export type InviteToken = typeof inviteTokensTable.$inferSelect;
+
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
 export const sessionsTable = pgTable(
   'sessions',
