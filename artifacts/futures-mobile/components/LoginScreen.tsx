@@ -1,164 +1,143 @@
-/**
- * LoginScreen.tsx — Prompts the operator for an API token at first launch.
- *
- * On submit the token is validated against /api/market/snapshot,
- * persisted to expo-secure-store, and the onSuccess callback fires
- * to reveal the main app. Nothing is baked into the JS bundle.
- */
-
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import { getApiBase, saveToken } from '@/hooks/tokenStore';
 
 interface Props {
-  onSuccess: () => void;
+  onLogin: (password: string) => Promise<boolean>;
 }
 
-export default function LoginScreen({ onSuccess }: Props) {
-  const [token, setToken] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function LoginScreen({ onLogin }: Props) {
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  async function handleSignIn() {
-    const t = token.trim();
-    if (!t) return;
-    setLoading(true);
+  async function handleSubmit() {
+    if (!password.trim() || loading) return;
     setError('');
-    try {
-      const res = await fetch(`${getApiBase()}/market/snapshot`, {
-        headers: { Authorization: `Bearer ${t}` },
-      });
-      if (res.ok) {
-        await saveToken(t);
-        onSuccess();
-      } else if (res.status === 401) {
-        setError('Invalid token — please try again.');
-      } else if (res.status === 503) {
-        setError('API is not configured on the server — contact your administrator.');
-      } else {
-        setError(`Service error (${res.status}) — try again later.`);
-      }
-    } catch {
-      setError('Could not reach the API — check your connection.');
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    const ok = await onLogin(password);
+    setLoading(false);
+    if (!ok) {
+      setError('Incorrect password. Try again.');
+      setPassword('');
     }
   }
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.card}>
         <Text style={styles.title}>Market Posture</Text>
-        <Text style={styles.subtitle}>Enter your API token to continue</Text>
+        <Text style={styles.subtitle}>Multi-timeframe futures command center</Text>
 
         <TextInput
           style={styles.input}
-          value={token}
-          onChangeText={setToken}
-          placeholder="API token"
+          placeholder="Password"
           placeholderTextColor="#52525b"
           secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          onSubmitEditing={handleSubmit}
+          returnKeyType="go"
           autoCapitalize="none"
           autoCorrect={false}
-          onSubmitEditing={handleSignIn}
-          returnKeyType="done"
         />
 
-        {!!error && <Text style={styles.error}>{error}</Text>}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Pressable
-          style={[styles.button, (!token.trim() || loading) && styles.buttonDisabled]}
-          onPress={handleSignIn}
-          disabled={!token.trim() || loading}
+        <TouchableOpacity
+          style={[styles.button, (!password.trim() || loading) && styles.buttonDisabled]}
+          onPress={handleSubmit}
+          disabled={!password.trim() || loading}
+          activeOpacity={0.7}
         >
-          {loading
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={styles.buttonText}>Sign in</Text>
-          }
-        </Pressable>
+          {loading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.buttonText}>Sign in</Text>
+          )}
+        </TouchableOpacity>
 
-        <Text style={styles.hint}>
-          Token is stored in device secure storage.
-        </Text>
+        <Text style={styles.hint}>Your session persists until you sign out.</Text>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
+  container: {
     flex: 1,
     backgroundColor: '#000',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 24,
   },
   card: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 340,
+    alignItems: 'center',
   },
   title: {
     color: '#fff',
     fontSize: 22,
     fontWeight: '700',
-    textAlign: 'center',
+    letterSpacing: -0.5,
     marginBottom: 6,
-    letterSpacing: -0.3,
   },
   subtitle: {
     color: '#71717a',
     fontSize: 13,
+    marginBottom: 32,
     textAlign: 'center',
-    marginBottom: 28,
   },
   input: {
+    width: '100%',
     backgroundColor: '#18181b',
     borderWidth: 1,
     borderColor: '#3f3f46',
     borderRadius: 8,
     color: '#fff',
     fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 10,
   },
   error: {
     color: '#f87171',
     fontSize: 12,
-    marginBottom: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
   },
   button: {
-    backgroundColor: '#3f3f46',
+    width: '100%',
+    backgroundColor: '#27272a',
+    borderWidth: 1,
+    borderColor: '#3f3f46',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
+    marginBottom: 24,
   },
   buttonDisabled: {
-    backgroundColor: '#27272a',
+    opacity: 0.4,
   },
   buttonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   hint: {
     color: '#3f3f46',
     fontSize: 11,
-    textAlign: 'center',
-    marginTop: 20,
   },
 });

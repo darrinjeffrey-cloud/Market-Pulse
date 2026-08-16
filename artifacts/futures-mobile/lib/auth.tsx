@@ -6,14 +6,9 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
-import * as WebBrowser from 'expo-web-browser';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const AUTH_TOKEN_KEY = 'auth_session_token';
-const ISSUER_URL = process.env.EXPO_PUBLIC_ISSUER_URL ?? 'https://replit.com/oidc';
 
 interface User {
   id: string;
@@ -27,7 +22,8 @@ interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: () => Promise<void>;
+  /** Returns true on success, false on wrong password. */
+  login: (password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -35,7 +31,7 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
-  login: async () => {},
+  login: async () => false,
   logout: async () => {},
 });
 
@@ -46,26 +42,9 @@ function getApiBaseUrl(): string {
   return '';
 }
 
-function getClientId(): string {
-  return process.env.EXPO_PUBLIC_REPL_ID || '';
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  const discovery = AuthSession.useAutoDiscovery(ISSUER_URL);
-  const redirectUri = AuthSession.makeRedirectUri();
-
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: getClientId(),
-      scopes: ['openid', 'email', 'profile', 'offline_access'],
-      redirectUri,
-      prompt: AuthSession.Prompt.Login,
-    },
-    discovery,
-  );
 
   const fetchUser = useCallback(async () => {
     try {
@@ -80,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${apiBase}/api/auth/user`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json() as { user?: User };
+      const data = (await res.json()) as { user?: User };
 
       if (data.user) {
         setUser(data.user);
@@ -99,57 +78,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void fetchUser();
   }, [fetchUser]);
 
-  useEffect(() => {
-    if (response?.type !== 'success' || !request?.codeVerifier) return;
-
-    const { code, state } = response.params;
-
-    void (async () => {
+  const login = useCallback(
+    async (password: string): Promise<boolean> => {
       try {
         const apiBase = getApiBaseUrl();
         if (!apiBase) {
-          console.error('API base URL is not configured.');
-          return;
+          console.error('EXPO_PUBLIC_DOMAIN is not configured.');
+          return false;
         }
 
-        const exchangeRes = await fetch(`${apiBase}/api/mobile-auth/token-exchange`, {
+        const res = await fetch(`${apiBase}/api/mobile-auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code,
-            code_verifier: request.codeVerifier,
-            redirect_uri: redirectUri,
-            state,
-            nonce: request.nonce,
-          }),
+          body: JSON.stringify({ password }),
         });
 
-        if (!exchangeRes.ok) {
-          console.error('Token exchange failed:', exchangeRes.status);
-          setIsLoading(false);
-          return;
-        }
+        if (!res.ok) return false;
 
-        const data = await exchangeRes.json() as { token?: string };
-        if (data.token) {
-          await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
-          setIsLoading(true);
-          await fetchUser();
-        }
+        const data = (await res.json()) as { token?: string };
+        if (!data.token) return false;
+
+        await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
+        await fetchUser();
+        return true;
       } catch (err) {
-        console.error('Token exchange error:', err);
-        setIsLoading(false);
+        console.error('Login error:', err);
+        return false;
       }
-    })();
-  }, [response, request, redirectUri, fetchUser]);
-
-  const login = useCallback(async () => {
-    try {
-      await promptAsync();
-    } catch (err) {
-      console.error('Login error:', err);
-    }
-  }, [promptAsync]);
+    },
+    [fetchUser],
+  );
 
   const logout = useCallback(async () => {
     try {

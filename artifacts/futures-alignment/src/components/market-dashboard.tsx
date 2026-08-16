@@ -1249,7 +1249,7 @@ export function MarketDashboard() {
             </button>
             <button
               type="button"
-              onClick={() => { window.location.href = '/api/logout'; }}
+              onClick={async () => { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); window.location.reload(); }}
               aria-label="Sign out"
               title="Sign out"
               className="fam-focus inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/60 text-muted-foreground transition-all hover:border-destructive/40 hover:text-destructive active:scale-95"

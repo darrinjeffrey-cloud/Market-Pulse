@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -15,6 +15,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { setBaseUrl } from '@workspace/api-client-react';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import LoginScreen from '@/components/LoginScreen';
 
 // Configure the API base URL — Expo runs outside the web proxy,
 // so it needs an absolute HTTPS URL to reach the shared API server.
@@ -55,9 +56,7 @@ function AppContent() {
   if (isLoading) return null;
 
   if (!isAuthenticated) {
-    // Trigger Replit OIDC login immediately
-    void login();
-    return null;
+    return <LoginScreen onLogin={login} />;
   }
 
   return (
