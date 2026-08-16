@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { fetch } from 'expo/fetch';
+import { getAuthHeaders as _getAuthHeadersFromStore } from '@/hooks/tokenStore';
 
 // ─── Types (mirrored from OpenAPI spec) ─────────────────────────────────────
 
@@ -89,8 +90,7 @@ function getApiBase(): string {
 }
 
 function getAuthHeaders(): Record<string, string> {
-  const token = process.env['EXPO_PUBLIC_API_TOKEN'];
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return _getAuthHeadersFromStore();
 }
 
 export interface UseMarketDataOptions {

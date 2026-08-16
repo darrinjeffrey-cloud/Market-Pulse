@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getAuthHeaders, getStoredToken } from '@/lib/auth';
 import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
 import {
@@ -49,11 +50,6 @@ import type {
 type StreamState = 'connecting' | 'live' | 'disconnected';
 
 const DISPLAY_ORDER = ['ES', 'NQ', 'MES', 'MNQ'];
-
-function getAuthHeaders(): Record<string, string> {
-  const token = import.meta.env['VITE_API_TOKEN'] as string | undefined;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 function formatPrice(value: number) {
   return new Intl.NumberFormat('en-US', {
@@ -1089,7 +1085,7 @@ export function MarketDashboard() {
   }, []);
 
   useEffect(() => {
-    const token = import.meta.env['VITE_API_TOKEN'] as string | undefined;
+    const token = getStoredToken();
     const streamUrl = token ? `/api/market/stream?token=${encodeURIComponent(token)}` : '/api/market/stream';
     const source = new EventSource(streamUrl);
     setStreamState('connecting');

@@ -7,11 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-
-function getAuthHeaders(): Record<string, string> {
-  const token = import.meta.env['VITE_API_TOKEN'] as string | undefined;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+import { getAuthHeaders } from '@/lib/auth';
 import {
   ArrowDownRight,
   ArrowUpRight,

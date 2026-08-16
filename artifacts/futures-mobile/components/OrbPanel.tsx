@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { getApiBase, getAuthHeaders } from '@/hooks/tokenStore';
 
 // ─── Types (mirror orb-engine.ts) ────────────────────────────────────────────
 
@@ -47,16 +48,6 @@ interface OrbSnapshot {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getApiBase(): string {
-  const domain = process.env['EXPO_PUBLIC_DOMAIN'];
-  return domain ? `https://${domain}/api` : '/api';
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const token = process.env['EXPO_PUBLIC_API_TOKEN'];
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 function fmtPrice(n: number | null): string {
   if (n == null) return '—';
@@ -371,7 +362,7 @@ export default function OrbPanel({ snapshotTimestamp }: OrbPanelProps) {
 
     async function fetch_() {
       try {
-        const res = await fetch(`${getApiBase()}/market/orb`);
+        const res = await fetch(`${getApiBase()}/market/orb`, { headers: getAuthHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as OrbSnapshot;
         if (!cancelled) { setData(json); setError(false); }
