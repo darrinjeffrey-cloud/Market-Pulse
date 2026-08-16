@@ -16,6 +16,7 @@ import { useColors } from '@/hooks/useColors';
 import { useMarketData, type DirectionChange, type MarketState } from '@/hooks/useMarketData';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAlertSettings } from '@/hooks/useAlertSettings';
+import { useAuth } from '@/lib/auth';
 import ContractCard from '@/components/ContractCard';
 import OrbPanel from '@/components/OrbPanel';
 import VwapPanel from '@/components/VwapPanel';
@@ -220,6 +221,7 @@ export default function HomeScreen() {
 
   // ── Alert settings ──────────────────────────────────────────────────────
   const { threshold, setThreshold } = useAlertSettings();
+  const { logout } = useAuth();
 
   // ── Notification tap → scroll to card ──────────────────────────────────
   const handleNotificationTap = useCallback(
@@ -325,6 +327,15 @@ export default function HomeScreen() {
               <Text style={[s.settingsBtnLabel, { color: colors.accent }]}>
                 {threshold === 0 ? 'All' : `≥${threshold}%`}
               </Text>
+            </Pressable>
+
+            {/* Sign out */}
+            <Pressable
+              onPress={() => void logout()}
+              style={[s.settingsBtn, { borderColor: colors.border }]}
+              hitSlop={8}
+            >
+              <Ionicons name="log-out-outline" size={14} color={colors.mutedForeground} />
             </Pressable>
 
             {/* Live / polling indicator */}
