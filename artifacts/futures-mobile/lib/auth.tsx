@@ -7,9 +7,8 @@ import React, {
   type ReactNode,
 } from 'react';
 import { Platform } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import { loadToken, saveToken, clearToken, getCachedToken } from '@/hooks/tokenStore';
 
-const AUTH_TOKEN_KEY = 'auth_session_token';
 const IS_WEB = Platform.OS === 'web';
 
 interface User {
@@ -57,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user ?? null);
       } else {
         // On native, send the stored Bearer token
-        const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+        const token = getCachedToken() ?? await loadToken();
         if (!token) {
           setUser(null);
           return;
@@ -70,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.user) {
           setUser(data.user);
         } else {
-          await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+          await clearToken();
           setUser(null);
         }
       }
@@ -100,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await fetchUser();
           return true;
         } else {
-          // On native, get a Bearer token and store it in SecureStore
+          // On native, get a Bearer token and persist it via tokenStore
           const apiBase = getApiBaseUrl();
           if (!apiBase) {
             console.error('EXPO_PUBLIC_DOMAIN is not configured.');
@@ -114,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!res.ok) return false;
           const data = (await res.json()) as { token?: string };
           if (!data.token) return false;
-          await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
+          await saveToken(data.token);
           await fetchUser();
           return true;
         }
@@ -131,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (IS_WEB) {
         await fetch('/api/logout', { method: 'POST', credentials: 'include' });
       } else {
-        const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+        const token = getCachedToken();
         if (token) {
           const apiBase = getApiBaseUrl();
           await fetch(`${apiBase}/api/mobile-auth/logout`, {
@@ -139,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             headers: { Authorization: `Bearer ${token}` },
           });
         }
-        await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+        await clearToken();
       }
     } catch {
       // ignore
