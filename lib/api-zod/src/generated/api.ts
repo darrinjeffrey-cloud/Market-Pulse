@@ -24,6 +24,7 @@ export const HealthCheckResponse = zod.object({
 export const GetMarketSnapshotResponse = zod.object({
   "timestamp": zod.coerce.date(),
   "source": zod.enum(['databento', 'unavailable']),
+  "isLiveConnected": zod.boolean(),
   "markets": zod.record(zod.string(), zod.object({
   "symbol": zod.string(),
   "lastPrice": zod.number(),
