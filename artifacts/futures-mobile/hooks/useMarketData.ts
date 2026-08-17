@@ -204,6 +204,7 @@ export function useMarketData(options?: UseMarketDataOptions) {
       });
 
       if (controller.signal.aborted || !mountedRef.current) return;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       if (!response.body) throw new Error('No response body');
 
       if (mountedRef.current) setIsConnected(true);
