@@ -362,7 +362,7 @@ export default function OrbPanel({ snapshotTimestamp }: OrbPanelProps) {
 
     async function fetch_() {
       try {
-        const res = await fetch(`${getApiBase()}/market/orb`, { headers: getAuthHeaders() });
+        const res = await fetch(`${getApiBase()}/market/orb`, { credentials: 'include', headers: getAuthHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as OrbSnapshot;
         if (!cancelled) { setData(json); setError(false); }

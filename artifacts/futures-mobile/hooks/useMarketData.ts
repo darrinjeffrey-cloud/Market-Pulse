@@ -165,6 +165,7 @@ export function useMarketData(options?: UseMarketDataOptions) {
   const fetchSnapshot = useCallback(async () => {
     try {
       const res = await fetch(`${getApiBase()}/market/snapshot`, {
+        credentials: 'include',
         headers: getAuthHeaders(),
       });
       if (!res.ok || !mountedRef.current) return;
@@ -200,6 +201,7 @@ export function useMarketData(options?: UseMarketDataOptions) {
     try {
       const response = await fetch(`${getApiBase()}/market/stream`, {
         signal: controller.signal,
+        credentials: 'include',
         headers: { Accept: 'text/event-stream', ...getAuthHeaders() },
       });
 

@@ -417,7 +417,7 @@ export default function VwapPanel({ snapshotTimestamp }: VwapPanelProps) {
 
     async function fetch_() {
       try {
-        const res = await fetch(`${getApiBase()}/market/vwap`, { headers: getAuthHeaders() });
+        const res = await fetch(`${getApiBase()}/market/vwap`, { credentials: 'include', headers: getAuthHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as VwapSnapshot;
         if (!cancelled) { setData(json); setError(false); }
