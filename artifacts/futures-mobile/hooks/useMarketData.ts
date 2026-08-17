@@ -193,6 +193,10 @@ export function useMarketData(options?: UseMarketDataOptions) {
   }, [fetchSnapshot]);
 
   // ── SSE stream (used when foregrounded) ────────────────────────────────
+  // Backoff delay for reconnects — resets to 3s on a successful connection,
+  // doubles on each failure up to 30s.
+  const reconnectDelayRef = useRef(3_000);
+
   const connectSSE = useCallback(async () => {
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -209,6 +213,8 @@ export function useMarketData(options?: UseMarketDataOptions) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       if (!response.body) throw new Error('No response body');
 
+      // Successful connection — reset backoff
+      reconnectDelayRef.current = 3_000;
       if (mountedRef.current) setIsConnected(true);
 
       const reader = response.body.getReader();
@@ -244,15 +250,19 @@ export function useMarketData(options?: UseMarketDataOptions) {
         }
       }
     } catch {
-      if (controller.signal.aborted || !mountedRef.current) return;
-      if (mountedRef.current) setIsConnected(false);
+      // Increase backoff on failure (doubles up to 30 s)
+      reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 30_000);
+    }
 
-      // Back-off reconnect
+    // Reconnect unless we were intentionally torn down (abort = unmount or new
+    // connectSSE call). This handles both clean stream closes (done=true) and
+    // errors — previously only errors triggered a reconnect, leaving the app
+    // silently dark if the server closed the connection cleanly.
+    if (!controller.signal.aborted && mountedRef.current) {
+      if (mountedRef.current) setIsConnected(false);
       setTimeout(() => {
-        if (mountedRef.current && !controller.signal.aborted) {
-          connectSSE();
-        }
-      }, 5_000);
+        if (mountedRef.current) connectSSE();
+      }, reconnectDelayRef.current);
     }
   }, [applySnapshot]);
 

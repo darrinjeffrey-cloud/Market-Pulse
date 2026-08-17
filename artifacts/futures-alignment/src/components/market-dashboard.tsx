@@ -1288,9 +1288,33 @@ export function MarketDashboard() {
     source.onopen = () => setStreamState('live');
     source.onmessage = receive;
     source.addEventListener('market', receive as EventListener);
-    source.onerror = () => setStreamState('disconnected');
+
+    source.onerror = () => {
+      // readyState CONNECTING (0) = EventSource is auto-reconnecting — show as
+      // 'connecting' rather than 'disconnected' so the UI doesn't flash red on
+      // every transient network blip that self-heals in a few seconds.
+      // readyState CLOSED (2) means the source won't retry on its own, so we
+      // force a new attempt via streamAttempt after a short delay.
+      if (source.readyState === EventSource.CLOSED) {
+        setStreamState('disconnected');
+        setTimeout(() => setStreamAttempt((v) => v + 1), 5_000);
+      } else {
+        setStreamState('connecting');
+      }
+    };
+
+    // Watchdog: if we haven't reached 'live' within 20 s of opening this
+    // EventSource, close it and create a fresh one. Handles cases where the
+    // browser's built-in reconnect loop gets stuck without firing onerror.
+    const watchdog = setTimeout(() => {
+      if (source.readyState !== EventSource.OPEN) {
+        source.close();
+        setStreamAttempt((v) => v + 1);
+      }
+    }, 20_000);
 
     return () => {
+      clearTimeout(watchdog);
       source.removeEventListener('market', receive as EventListener);
       source.close();
     };
