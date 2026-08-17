@@ -14,6 +14,7 @@ import {
 import { startLiveFeed } from "../lib/live-feed";
 import { computeOrbSnapshot } from "../lib/orb-engine";
 import { computeVwapSnapshot } from "../lib/vwap-engine";
+import { computeOvernightSnapshot } from "../lib/overnight-engine";
 
 const router: IRouter = Router();
 
@@ -128,6 +129,14 @@ router.get("/market/orb", (_req, res): void => {
 
 router.get("/market/vwap", (_req, res): void => {
   res.json(computeVwapSnapshot());
+});
+
+// ---------------------------------------------------------------------------
+// Overnight High / Low
+// ---------------------------------------------------------------------------
+
+router.get("/market/overnight", (_req, res): void => {
+  res.json(computeOvernightSnapshot());
 });
 
 export default router;
