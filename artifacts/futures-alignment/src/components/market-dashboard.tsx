@@ -574,10 +574,17 @@ function MarketCard({
   index: number;
 }) {
   const ext = market as ExtMarket;
-  // Lazy-init to the first tab that already has data so the panel isn't empty on mount
-  const [activeTab, setActiveTab] = useState<Tf>(
-    () => (TF_ORDER.find((tf) => market.timeframes[tf]) ?? '5m') as Tf,
-  );
+  const storageKey = `fam-tf-${market.symbol}`;
+  // Lazy-init: restore from localStorage, fall back to first tab with data
+  const [activeTab, setActiveTabRaw] = useState<Tf>(() => {
+    const saved = localStorage.getItem(storageKey) as Tf | null;
+    if (saved && TF_ORDER.includes(saved)) return saved;
+    return (TF_ORDER.find((tf) => market.timeframes[tf]) ?? '5m') as Tf;
+  });
+  const setActiveTab = useCallback((tf: Tf) => {
+    setActiveTabRaw(tf);
+    localStorage.setItem(storageKey, tf);
+  }, [storageKey]);
 
   // Timer tick: forces a re-render every 60 s so staleness checks stay current
   // even when the SSE feed has gone quiet (no new snapshot = no React state change).
