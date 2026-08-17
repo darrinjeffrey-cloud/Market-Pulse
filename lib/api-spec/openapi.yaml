@@ -343,6 +343,12 @@ components:
           type: string
         lastPrice:
           type: number
+        onHigh:
+          type: [number, "null"]
+          description: "Overnight (Globex) session high — prior RTH close to 9:30 AM ET open; null until overnight bars exist"
+        onLow:
+          type: [number, "null"]
+          description: "Overnight (Globex) session low; null until overnight bars exist"
         perTimeframeSetup:
           type: object
           additionalProperties:

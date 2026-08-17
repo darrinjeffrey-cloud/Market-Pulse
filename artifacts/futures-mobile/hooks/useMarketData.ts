@@ -31,6 +31,10 @@ export interface TradeSetup {
 export interface MarketState {
   symbol: string;
   lastPrice: number;
+  /** Overnight (Globex) session high; null until overnight bars exist */
+  onHigh?: number | null;
+  /** Overnight (Globex) session low; null until overnight bars exist */
+  onLow?: number | null;
   perTimeframeSetup?: Record<string, TradeSetup>;
   timeframes: Record<string, TimeframeState>;
 }

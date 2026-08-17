@@ -1,1 +1,2 @@
 - [Auth system](auth-system.md) — Password gate (ADMIN_PASSWORD secret) replaced Replit OIDC; sessions stored in Postgres.
+- [Session time boundaries](session-time-boundaries.md) — compute CME session windows in ET with DST via the shared session-bounds module, never fixed UTC constants.

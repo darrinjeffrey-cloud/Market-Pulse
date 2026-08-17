@@ -5,14 +5,16 @@
  * These levels are key intraday reference points — price often tests overnight H/L
  * during the RTH session.
  *
- * Overnight session definition:
- *   Start : previous day's RTH close (20:00 UTC / 16:00 ET)
- *   End   : current day's RTH open (13:30 UTC / 09:30 ET)
+ * Overnight session definition (DST-aware, America/New_York — shared with the
+ * market snapshot via session-bounds.ts):
+ *   Start : RTH close (4:15 PM ET)
+ *   End   : next RTH open (9:30 AM ET)
  *
  * Status lifecycle:
- *   forming   — currently inside the overnight window (pre-market / after-hours)
+ *   forming   — currently inside the overnight window (pre-market / after-hours);
+ *               a new window opens immediately at each RTH close
  *   reference — RTH is active; overnight H/L are fixed reference levels for the day
- *   expired   — RTH session ended (after 20:00 UTC)
+ *   expired   — no longer emitted (kept for client compatibility)
  *
  * Context signals (during RTH):
  *   above_both  — price above overnight high (bullish extension)
@@ -23,13 +25,11 @@
  */
 
 import { buffers, getWatchedSymbols } from "./market-engine.js";
+import { overnightWindow } from "./session-bounds.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** RTH / Globex boundaries in UTC minutes-from-midnight */
-const RTH_START_MINS = 13 * 60 + 30;   // 13:30 UTC = 09:30 ET
-const RTH_END_MINS   = 20 * 60;        // 20:00 UTC = 16:00 ET
-const TICK_SIZE      = 0.25;
+const TICK_SIZE = 0.25;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,15 +68,6 @@ export type OvernightSnapshot = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function utcMins(ts: number): number {
-  const d = new Date(ts);
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
-}
-
-function startOfUtcDay(ts: number): number {
-  return ts - (ts % (24 * 60 * 60_000));
-}
-
 function toDisplayName(symbol: string): string {
   return symbol.replace(".v.", ".c.");
 }
@@ -85,20 +76,10 @@ function fmt2(n: number): number {
   return Number(n.toFixed(2));
 }
 
-/** Returns the overnight window [start, end) in epoch-ms for the *current* day. */
-function overnightBounds(nowMs: number): { start: number; end: number } {
-  const todayMs  = startOfUtcDay(nowMs);
-  const rthOpen  = todayMs + RTH_START_MINS * 60_000;          // 13:30 UTC today
-  const prevClose = todayMs - (24 * 60 * 60_000) + RTH_END_MINS * 60_000; // 20:00 UTC yesterday
-  return { start: prevClose, end: rthOpen };
-}
-
 // ─── Core computation ─────────────────────────────────────────────────────────
 
-function computeState(symbol: string): OvernightState {
+function computeState(symbol: string, now = Date.now()): OvernightState {
   const displayName = toDisplayName(symbol);
-  const now         = Date.now();
-  const nowMins     = utcMins(now);
   const lastUpdated = new Date(now).toISOString();
 
   const blank: OvernightState = {
@@ -113,35 +94,23 @@ function computeState(symbol: string): OvernightState {
 
   const allBars = buffers.get(symbol) ?? [];
 
-  // ── Overnight window boundaries ──────────────────────────────────────────
-  const { start: overnightStart, end: overnightEnd } = overnightBounds(now);
+  // ── Overnight window (DST-aware, shared with market snapshot) ────────────
+  // During RTH the completed session is the day's reference; outside RTH the
+  // current session (opened at the last 4:15 PM ET close) is still forming.
+  const { start: overnightStart, end: overnightEnd, phase } = overnightWindow(now);
+  const status: OvernightStatus = phase === "rth" ? "reference" : "forming";
 
-  // Bars in the overnight session (prev RTH close → current RTH open)
+  // Bars in the overnight session (RTH close → next RTH open)
   const overnightBars = allBars.filter(b => b.ts >= overnightStart && b.ts < overnightEnd);
 
   if (overnightBars.length === 0) {
-    // Determine appropriate status even without data
-    if (nowMins >= RTH_START_MINS && nowMins < RTH_END_MINS) {
-      return { ...blank, status: "reference" };
-    }
-    if (nowMins >= RTH_END_MINS) {
-      return { ...blank, status: "expired" };
-    }
-    return blank;  // forming, no data yet
+    return { ...blank, status };
   }
 
   const overnightHigh  = fmt2(Math.max(...overnightBars.map(b => b.high)));
   const overnightLow   = fmt2(Math.min(...overnightBars.map(b => b.low)));
   const rangeTicks     = Math.round((overnightHigh - overnightLow) / TICK_SIZE);
   const barsInSession  = overnightBars.length;
-
-  // ── Status ───────────────────────────────────────────────────────────────
-  let status: OvernightStatus = "forming";
-  if (nowMins >= RTH_END_MINS) {
-    status = "expired";
-  } else if (nowMins >= RTH_START_MINS) {
-    status = "reference";
-  }
 
   // ── Current price + context (only meaningful during RTH) ─────────────────
   let currentPrice: number | null = null;
@@ -182,10 +151,10 @@ function computeState(symbol: string): OvernightState {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function computeOvernightSnapshot(): OvernightSnapshot {
+export function computeOvernightSnapshot(now = Date.now()): OvernightSnapshot {
   const markets: Record<string, OvernightState> = {};
   for (const symbol of getWatchedSymbols()) {
-    markets[symbol] = computeState(symbol);
+    markets[symbol] = computeState(symbol, now);
   }
-  return { timestamp: new Date().toISOString(), markets };
+  return { timestamp: new Date(now).toISOString(), markets };
 }

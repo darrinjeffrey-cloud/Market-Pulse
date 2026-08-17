@@ -109,6 +109,16 @@ export type MarketStateTimeframes = {[key: string]: TimeframeState};
 export interface MarketState {
   symbol: string;
   lastPrice: number;
+  /**
+     * Overnight (Globex) session high — prior RTH close to 9:30 AM ET open; null until overnight bars exist
+     * @nullable
+     */
+  onHigh?: number | null;
+  /**
+     * Overnight (Globex) session low; null until overnight bars exist
+     * @nullable
+     */
+  onLow?: number | null;
   perTimeframeSetup?: MarketStatePerTimeframeSetup;
   timeframes: MarketStateTimeframes;
 }

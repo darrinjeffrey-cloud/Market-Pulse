@@ -28,6 +28,8 @@ export const GetMarketSnapshotResponse = zod.object({
   "markets": zod.record(zod.string(), zod.object({
   "symbol": zod.string(),
   "lastPrice": zod.number(),
+  "onHigh": zod.number().nullish().describe('Overnight (Globex) session high — prior RTH close to 9:30 AM ET open; null until overnight bars exist'),
+  "onLow": zod.number().nullish().describe('Overnight (Globex) session low; null until overnight bars exist'),
   "perTimeframeSetup": zod.record(zod.string(), zod.object({
   "entry": zod.number(),
   "stopLoss": zod.number(),

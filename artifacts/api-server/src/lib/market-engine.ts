@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { logger } from "./logger";
+import { overnightHLFromBars, overnightWindow } from "./session-bounds.js";
 
 const DATASET = "GLBX.MDP3";
 
@@ -112,6 +113,10 @@ type TradeSetup = {
 type MarketState = {
   symbol: string;
   lastPrice: number;
+  /** Overnight (Globex) session high — prior RTH close (4:15 PM ET) → RTH open (9:30 AM ET). Null until overnight bars exist. */
+  onHigh: number | null;
+  /** Overnight (Globex) session low. Null until overnight bars exist. */
+  onLow: number | null;
   perTimeframeSetup: Record<string, TradeSetup>;
   timeframes: Record<string, TimeframeState>;
 };
@@ -614,6 +619,16 @@ function tradeLevels(
   };
 }
 
+/**
+ * Overnight (Globex) session high/low for the session relevant right now —
+ * DST-aware ET boundaries shared with overnight-engine via session-bounds.
+ * Forming after the 4:15 PM ET close, fixed reference during RTH, resets at
+ * each 9:30 AM ET open. Nulls when no overnight bars exist.
+ */
+function computeOvernightHL(bars: Bar[]): { onHigh: number | null; onLow: number | null } {
+  return overnightHLFromBars(bars, overnightWindow(Date.now()));
+}
+
 export function evaluateSymbol(symbol: string): MarketState | null {
   const bars = buffers.get(symbol) ?? [];
   if (bars.length < 20) return null;
@@ -650,6 +665,7 @@ export function evaluateSymbol(symbol: string): MarketState | null {
   return {
     symbol: DISPLAY_NAMES[symbol] ?? symbol,
     lastPrice: Number(latest.close.toFixed(2)),
+    ...computeOvernightHL(bars),
     perTimeframeSetup,
     timeframes: states,
   };
