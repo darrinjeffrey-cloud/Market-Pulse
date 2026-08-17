@@ -878,18 +878,20 @@ type CatalogEntry = {
 
 
 function FuturesSearchDialog({
-  watchedDisplayNames,
+  watchedSymbols,
   onAdd,
   onRemove,
 }: {
-  watchedDisplayNames: Set<string>;
-  onAdd: (displayName: string) => void;
-  onRemove: (displayName: string) => void;
+  /** Raw Databento symbols currently on the watchlist, e.g. "ES.v.0" */
+  watchedSymbols: Set<string>;
+  onAdd: (symbol: string) => void;
+  onRemove: (symbol: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [loadingSymbol, setLoadingSymbol] = useState<string | null>(null);
+  const [errorSymbol, setErrorSymbol] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -922,26 +924,30 @@ function FuturesSearchDialog({
   );
 
   const handleToggle = async (entry: CatalogEntry) => {
-    const isWatched = watchedDisplayNames.has(entry.displayName);
+    const isWatched = watchedSymbols.has(entry.symbol);
     setLoadingSymbol(entry.symbol);
+    setErrorSymbol(null);
     try {
       if (isWatched) {
-        await fetch(`/api/market/watchlist/${encodeURIComponent(entry.symbol)}`, {
+        const res = await fetch(`/api/market/watchlist/${encodeURIComponent(entry.symbol)}`, {
           method: 'DELETE',
           credentials: 'include',
         });
-        onRemove(entry.displayName);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        onRemove(entry.symbol);
       } else {
-        await fetch('/api/market/watchlist', {
+        const res = await fetch('/api/market/watchlist', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ symbol: entry.symbol }),
         });
-        onAdd(entry.displayName);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        onAdd(entry.symbol);
       }
     } catch {
-      // swallow — SSE will reflect actual state
+      setErrorSymbol(entry.symbol);
+      setTimeout(() => setErrorSymbol(null), 3000);
     } finally {
       setLoadingSymbol(null);
     }
@@ -1003,8 +1009,9 @@ function FuturesSearchDialog({
                     {category}
                   </div>
                   {grouped[category]?.map((entry) => {
-                    const isWatched = watchedDisplayNames.has(entry.displayName);
+                    const isWatched = watchedSymbols.has(entry.symbol);
                     const isLoading = loadingSymbol === entry.symbol;
+                    const hasError = errorSymbol === entry.symbol;
                     return (
                       <div
                         key={entry.symbol}
@@ -1020,6 +1027,11 @@ function FuturesSearchDialog({
                                 Watching
                               </span>
                             )}
+                            {hasError && (
+                              <span className="rounded-sm border border-[hsl(var(--destructive)/.3)] bg-[hsl(var(--destructive)/.1)] px-1 py-px text-[8px] font-bold uppercase tracking-wider text-[hsl(var(--destructive))]">
+                                Failed
+                              </span>
+                            )}
                           </div>
                           <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{entry.name}</div>
                         </div>
@@ -1029,9 +1041,11 @@ function FuturesSearchDialog({
                           onClick={() => void handleToggle(entry)}
                           title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                           className={`fam-focus inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40
-                            ${isWatched
-                              ? 'border-[hsl(var(--destructive)/.35)] bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/.18)]'
-                              : 'border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.18)]'
+                            ${hasError
+                              ? 'border-[hsl(var(--destructive)/.5)] bg-[hsl(var(--destructive)/.1)] text-[hsl(var(--destructive))]'
+                              : isWatched
+                                ? 'border-[hsl(var(--destructive)/.35)] bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/.18)]'
+                                : 'border-[hsl(var(--primary)/.35)] bg-[hsl(var(--primary)/.08)] text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/.18)]'
                             }`}
                         >
                           {isLoading ? (
@@ -1233,8 +1247,8 @@ export function MarketDashboard() {
   const [streamSnapshot, setStreamSnapshot] = useState<MarketSnapshot | null>(null);
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
-  // Optimistic watchlist: symbols added/removed via dialog before SSE reflects them
-  const [extraWatched, setExtraWatched] = useState<Set<string>>(new Set());
+  // Symbols added via dialog that are still bootstrapping on the server (~15s)
+  const [bootstrapping, setBootstrapping] = useState<Set<string>>(new Set());
   const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
 
   const [activeContract, setActiveContractRaw] = useState<string | null>(() => {
@@ -1259,6 +1273,12 @@ export function MarketDashboard() {
         if (incoming && typeof incoming === 'object' && 'markets' in incoming) {
           setStreamSnapshot(incoming);
           setStreamState('live');
+          // Clear any bootstrapping symbols that have now arrived in the snapshot
+          const arrived = new Set(Object.keys(incoming.markets));
+          setBootstrapping((prev) => {
+            if (![...prev].some((s) => arrived.has(s))) return prev;
+            return new Set([...prev].filter((s) => !arrived.has(s)));
+          });
         }
       } catch {
         setStreamState('disconnected');
@@ -1315,11 +1335,11 @@ export function MarketDashboard() {
     }
   }, [markets]);
 
-  // Set of displayNames currently in the watchlist (from snapshot + optimistic adds)
-  const watchedDisplayNames = useMemo(() => {
+  // Set of raw symbols currently on the watchlist (from snapshot + still-bootstrapping adds)
+  const watchedSymbols = useMemo(() => {
     const fromSnapshot = new Set(markets.map((m) => m.symbol));
-    return new Set([...fromSnapshot, ...extraWatched]);
-  }, [markets, extraWatched]);
+    return new Set([...fromSnapshot, ...bootstrapping]);
+  }, [markets, bootstrapping]);
   // Summary counts — stale timeframes excluded; all zeroed when market is closed
   const nowMs = Date.now();
   const summaryMarketClosed = !getCMESession(new Date(nowMs)).open;
@@ -1391,14 +1411,17 @@ export function MarketDashboard() {
               }
             />
             <FuturesSearchDialog
-              watchedDisplayNames={watchedDisplayNames}
-              onAdd={(displayName) => setExtraWatched((prev) => new Set([...prev, displayName]))}
-              onRemove={(displayName) => {
-                setExtraWatched((prev) => {
-                  const next = new Set(prev);
-                  next.delete(displayName);
-                  return next;
+              watchedSymbols={watchedSymbols}
+              onAdd={(symbol) => setBootstrapping((prev) => new Set([...prev, symbol]))}
+              onRemove={(symbol) => {
+                // Optimistically hide the contract immediately
+                setActiveContract((prev) => {
+                  if (prev !== symbol) return prev;
+                  const others = markets.filter((m) => m.symbol !== symbol);
+                  return others[0]?.symbol ?? null;
                 });
+                setOptimisticRemoved((prev) => new Set([...prev, symbol]));
+                setBootstrapping((prev) => { const next = new Set(prev); next.delete(symbol); return next; });
               }}
             />
             <button
@@ -1543,6 +1566,21 @@ export function MarketDashboard() {
                   </div>
                 );
               })}
+              {/* Bootstrapping placeholders — shown while the server loads new contracts (~15s) */}
+              {[...bootstrapping]
+                .filter((s) => !markets.some((m) => m.symbol === s))
+                .map((symbol) => (
+                  <div key={`boot-${symbol}`} className="shrink-0">
+                    <div
+                      title="Loading contract data — usually takes ~15 seconds"
+                      className="relative inline-flex cursor-default items-center gap-2 rounded-lg border border-[hsl(var(--primary)/.25)] bg-[hsl(var(--primary)/.05)] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[.1em] text-[hsl(var(--primary)/.5)]"
+                    >
+                      <Loader2 className="h-2 w-2 animate-spin" />
+                      {symbol}
+                      <span className="ml-0.5 text-[8px] font-normal normal-case tracking-normal opacity-70">loading…</span>
+                    </div>
+                  </div>
+                ))}
             </div>
 
             {/* Active contract card — full width */}
