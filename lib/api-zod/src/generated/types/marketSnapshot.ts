@@ -11,6 +11,8 @@ import type { MarketSnapshotSource } from './marketSnapshotSource';
 export interface MarketSnapshot {
   timestamp: Date;
   source: MarketSnapshotSource;
+  /** True when the Databento Live TCP stream is active; false = polling fallback */
+  isLiveConnected: boolean;
   markets: MarketSnapshotMarkets;
   /** @nullable */
   message: string | null;

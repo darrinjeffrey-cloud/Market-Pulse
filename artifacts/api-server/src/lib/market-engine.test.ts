@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import {
   determineDirectionalBias,
   evaluateSymbol,
+  computeVWAP,
   buffers,
   type Bar,
 } from "./market-engine.js";
@@ -300,5 +301,52 @@ describe("evaluateSymbol", () => {
       new Date(latestBarTs).toISOString(),
       "5m lastUpdated must equal the most recent 1m bar ts, not the bucket-start",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeVWAP — deviation bands
+// ---------------------------------------------------------------------------
+
+describe("computeVWAP deviation bands", () => {
+  /** Bar with high = low = close so typical price === price. */
+  function flatBar(ts: number, price: number, volume: number): Bar {
+    return { ts, open: price, high: price, low: price, close: price, volume };
+  }
+
+  // Recent timestamps so bars fall into either the "today UTC" window or the
+  // last-60-bars fallback — both select the same set for these small arrays.
+  const now = Date.now();
+
+  it("computes VWAP, ±1σ and ±2σ for equal-volume bars", () => {
+    // tp = 100 and 104, equal volume → vwap 102, variance 4, σ = 2
+    const bars = [flatBar(now - 120_000, 100, 1), flatBar(now - 60_000, 104, 1)];
+    const r = computeVWAP(bars);
+    assert.equal(r.vwap, 102);
+    assert.equal(r.vwapStd1Up, 104);
+    assert.equal(r.vwapStd1Down, 100);
+    assert.equal(r.vwapStd2Up, 106);
+    assert.equal(r.vwapStd2Down, 98);
+  });
+
+  it("weights variance by volume", () => {
+    // tp 100 @ vol 3, tp 110 @ vol 1 → vwap 102.5, var 18.75, σ ≈ 4.3301
+    const bars = [flatBar(now - 120_000, 100, 3), flatBar(now - 60_000, 110, 1)];
+    const r = computeVWAP(bars);
+    assert.equal(r.vwap, 102.5);
+    assert.equal(r.vwapStd1Up, 106.83);
+    assert.equal(r.vwapStd1Down, 98.17);
+    assert.equal(r.vwapStd2Up, 111.16);
+    assert.equal(r.vwapStd2Down, 93.84);
+  });
+
+  it("zero-variance session collapses all bands onto VWAP", () => {
+    const bars = [flatBar(now - 120_000, 5000, 2), flatBar(now - 60_000, 5000, 7)];
+    const r = computeVWAP(bars);
+    assert.equal(r.vwap, 5000);
+    assert.equal(r.vwapStd1Up, 5000);
+    assert.equal(r.vwapStd1Down, 5000);
+    assert.equal(r.vwapStd2Up, 5000);
+    assert.equal(r.vwapStd2Down, 5000);
   });
 });

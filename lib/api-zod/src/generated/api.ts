@@ -24,7 +24,7 @@ export const HealthCheckResponse = zod.object({
 export const GetMarketSnapshotResponse = zod.object({
   "timestamp": zod.coerce.date(),
   "source": zod.enum(['databento', 'unavailable']),
-  "isLiveConnected": zod.boolean(),
+  "isLiveConnected": zod.boolean().describe('True when the Databento Live TCP stream is active; false = polling fallback'),
   "markets": zod.record(zod.string(), zod.object({
   "symbol": zod.string(),
   "lastPrice": zod.number(),
@@ -46,6 +46,10 @@ export const GetMarketSnapshotResponse = zod.object({
   "adx": zod.number().describe('ADX 0–100: <20 ranging, 20–40 trending, >40 strong'),
   "rsi": zod.number().describe('RSI-14 0–100: >50 bullish momentum, <50 bearish'),
   "vwap": zod.number().describe('VWAP anchored to current UTC calendar day'),
+  "vwapStd1Up": zod.number().describe('VWAP + 1 volume-weighted standard deviation'),
+  "vwapStd1Down": zod.number().describe('VWAP − 1 volume-weighted standard deviation'),
+  "vwapStd2Up": zod.number().describe('VWAP + 2 volume-weighted standard deviations'),
+  "vwapStd2Down": zod.number().describe('VWAP − 2 volume-weighted standard deviations'),
   "isRTH": zod.boolean().describe('True inside US equity futures RTH (13:30–20:00 UTC)'),
   "confluenceScore": zod.number().describe('0–5 count of bias factors confirming the active direction'),
   "lastUpdated": zod.coerce.date().describe('ISO-8601 timestamp of the most recent bar used to compute this timeframe')

@@ -84,6 +84,14 @@ type TimeframeState = {
   rsi: number;
   /** VWAP anchored to current UTC calendar day */
   vwap: number;
+  /** VWAP + 1 volume-weighted standard deviation */
+  vwapStd1Up: number;
+  /** VWAP − 1 volume-weighted standard deviation */
+  vwapStd1Down: number;
+  /** VWAP + 2 volume-weighted standard deviations */
+  vwapStd2Up: number;
+  /** VWAP − 2 volume-weighted standard deviations */
+  vwapStd2Down: number;
   /** True when bar falls inside US equity futures RTH (13:30–20:00 UTC) */
   isRTH: boolean;
   /** 0–5: how many of the five bias factors confirm the active direction */
@@ -355,22 +363,43 @@ function computeRSI(bars: Bar[], period = 14): number {
   return Number((100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
 }
 
+export type VwapBands = {
+  vwap: number;
+  vwapStd1Up: number;
+  vwapStd1Down: number;
+  vwapStd2Up: number;
+  vwapStd2Down: number;
+};
+
 /**
- * VWAP anchored to the current UTC calendar day.
+ * VWAP anchored to the current UTC calendar day, with ±1σ / ±2σ deviation
+ * bands from the volume-weighted variance (E[tp²] − E[tp]², same bar loop).
  * Falls back to the last 60 bars when no same-day bars exist (e.g. overnight gap).
  */
-function computeVWAP(bars: Bar[]): number {
+export function computeVWAP(bars: Bar[]): VwapBands {
   const now = Date.now();
   const startOfDay = now - (now % (24 * 60 * 60_000));
   const src = bars.filter((b) => b.ts >= startOfDay);
   const source = src.length > 0 ? src : bars.slice(-60);
-  let cumTPV = 0, cumVol = 0;
+  let cumTPV = 0, cumTP2V = 0, cumVol = 0;
   for (const b of source) {
-    cumTPV += ((b.high + b.low + b.close) / 3) * b.volume;
+    const tp = (b.high + b.low + b.close) / 3;
+    cumTPV += tp * b.volume;
+    cumTP2V += tp * tp * b.volume;
     cumVol += b.volume;
   }
   const last = bars[bars.length - 1];
-  return Number((cumVol > 0 ? cumTPV / cumVol : last.close).toFixed(2));
+  const vwap = cumVol > 0 ? cumTPV / cumVol : last.close;
+  const variance = cumVol > 0 ? cumTP2V / cumVol - vwap * vwap : 0;
+  const sigma = Math.sqrt(Math.max(variance, 0));
+  const r = (n: number) => Number(n.toFixed(2));
+  return {
+    vwap: r(vwap),
+    vwapStd1Up: r(vwap + sigma),
+    vwapStd1Down: r(vwap - sigma),
+    vwapStd2Up: r(vwap + sigma * 2),
+    vwapStd2Down: r(vwap - sigma * 2),
+  };
 }
 
 /**
@@ -516,7 +545,7 @@ function timeframeState(bars: Bar[]): TimeframeState | null {
     volume: Math.round(current.volume),
     adx,
     rsi,
-    vwap: computeVWAP(bars),
+    ...computeVWAP(bars),
     isRTH: detectRTH(current.ts),
     confluenceScore,
     lastUpdated: new Date(current.ts).toISOString(),

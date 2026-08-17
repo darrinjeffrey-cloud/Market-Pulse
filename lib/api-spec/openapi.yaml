@@ -297,6 +297,18 @@ components:
         vwap:
           type: number
           description: "VWAP anchored to current UTC calendar day"
+        vwapStd1Up:
+          type: number
+          description: "VWAP + 1 volume-weighted standard deviation"
+        vwapStd1Down:
+          type: number
+          description: "VWAP − 1 volume-weighted standard deviation"
+        vwapStd2Up:
+          type: number
+          description: "VWAP + 2 volume-weighted standard deviations"
+        vwapStd2Down:
+          type: number
+          description: "VWAP − 2 volume-weighted standard deviations"
         isRTH:
           type: boolean
           description: "True inside US equity futures RTH (13:30–20:00 UTC)"
@@ -307,7 +319,7 @@ components:
           type: string
           format: date-time
           description: "ISO-8601 timestamp of the most recent bar used to compute this timeframe"
-      required: [rvol, atr, direction, volSpike, close, volume, adx, rsi, vwap, isRTH, confluenceScore, lastUpdated]
+      required: [rvol, atr, direction, volSpike, close, volume, adx, rsi, vwap, vwapStd1Up, vwapStd1Down, vwapStd2Up, vwapStd2Down, isRTH, confluenceScore, lastUpdated]
     TradeSetup:
       type: object
       properties:
@@ -349,10 +361,13 @@ components:
         source:
           type: string
           enum: [databento, unavailable]
+        isLiveConnected:
+          type: boolean
+          description: "True when the Databento Live TCP stream is active; false = polling fallback"
         markets:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/MarketState"
         message:
           type: [string, "null"]
-      required: [timestamp, source, markets, message]
+      required: [timestamp, source, isLiveConnected, markets, message]

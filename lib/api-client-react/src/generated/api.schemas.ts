@@ -77,6 +77,14 @@ export interface TimeframeState {
   rsi: number;
   /** VWAP anchored to current UTC calendar day */
   vwap: number;
+  /** VWAP + 1 volume-weighted standard deviation */
+  vwapStd1Up: number;
+  /** VWAP − 1 volume-weighted standard deviation */
+  vwapStd1Down: number;
+  /** VWAP + 2 volume-weighted standard deviations */
+  vwapStd2Up: number;
+  /** VWAP − 2 volume-weighted standard deviations */
+  vwapStd2Down: number;
   /** True inside US equity futures RTH (13:30–20:00 UTC) */
   isRTH: boolean;
   /** 0–5 count of bias factors confirming the active direction */
@@ -118,6 +126,8 @@ export type MarketSnapshotMarkets = {[key: string]: MarketState};
 export interface MarketSnapshot {
   timestamp: string;
   source: MarketSnapshotSource;
+  /** True when the Databento Live TCP stream is active; false = polling fallback */
+  isLiveConnected: boolean;
   markets: MarketSnapshotMarkets;
   /** @nullable */
   message: string | null;
