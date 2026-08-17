@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/auth';
 import ContractCard from '@/components/ContractCard';
 import OrbPanel from '@/components/OrbPanel';
 import VwapPanel from '@/components/VwapPanel';
+import OvernightPanel from '@/components/OvernightPanel';
 import { getCMESession, formatCountdown } from '@/lib/session';
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -411,6 +412,7 @@ export default function HomeScreen() {
           <>
             <OrbPanel snapshotTimestamp={lastUpdated?.toISOString() ?? undefined} />
             <VwapPanel snapshotTimestamp={lastUpdated?.toISOString() ?? undefined} />
+            <OvernightPanel snapshotTimestamp={lastUpdated?.toISOString() ?? undefined} />
           </>
         }
         ListEmptyComponent={

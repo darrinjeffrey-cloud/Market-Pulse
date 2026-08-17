@@ -183,24 +183,36 @@ function VwapCard({ state }: { state: VwapState }) {
           <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
             VWAP · {state.barsInSession} bar{state.barsInSession !== 1 ? 's' : ''}
           </div>
-          <div className="flex items-center justify-between">
+          {/* 5-column band display: +2σ | +1σ | VWAP | −1σ | −2σ */}
+          <div className="grid grid-cols-5 items-end gap-0.5 text-center">
             <div>
-              <div className="mb-0.5 text-[9px] text-muted-foreground">+1σ</div>
-              <div className="fam-mono text-xs font-semibold text-muted-foreground">
+              <div className="mb-0.5 text-[8px] text-[hsl(var(--destructive)/.5)]">+2σ</div>
+              <div className="fam-mono text-[10px] font-semibold text-[hsl(var(--destructive)/.6)]">
+                {state.band2Upper != null ? fmtPrice(state.band2Upper) : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="mb-0.5 text-[8px] text-[hsl(var(--destructive)/.75)]">+1σ</div>
+              <div className="fam-mono text-[10px] font-semibold text-[hsl(var(--destructive)/.85)]">
                 {state.band1Upper != null ? fmtPrice(state.band1Upper) : '—'}
               </div>
             </div>
-            <div className="text-center">
-              <div className="text-[9px] text-muted-foreground/50">│</div>
+            <div>
+              <div className="mb-0.5 text-[8px] text-muted-foreground/50">VWAP</div>
               <div className="fam-mono text-[13px] font-bold text-foreground">
                 {fmtPrice(state.vwap)}
               </div>
-              <div className="text-[9px] text-muted-foreground/50">│</div>
             </div>
-            <div className="text-right">
-              <div className="mb-0.5 text-[9px] text-muted-foreground">−1σ</div>
-              <div className="fam-mono text-xs font-semibold text-muted-foreground">
+            <div>
+              <div className="mb-0.5 text-[8px] text-[hsl(var(--chart-4)/.75)]">−1σ</div>
+              <div className="fam-mono text-[10px] font-semibold text-[hsl(var(--chart-4)/.85)]">
                 {state.band1Lower != null ? fmtPrice(state.band1Lower) : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="mb-0.5 text-[8px] text-[hsl(var(--chart-4)/.5)]">−2σ</div>
+              <div className="fam-mono text-[10px] font-semibold text-[hsl(var(--chart-4)/.6)]">
+                {state.band2Lower != null ? fmtPrice(state.band2Lower) : '—'}
               </div>
             </div>
           </div>
@@ -243,6 +255,12 @@ function VwapCard({ state }: { state: VwapState }) {
         </div>
       ) : state.status === 'watching' && state.band1Upper !== null && state.band1Lower !== null ? (
         <div className="space-y-1 text-[9px] text-muted-foreground">
+          {state.band2Upper !== null && (
+            <div className="flex items-center justify-between">
+              <span>Short extension (−2σ stop)</span>
+              <span className="fam-mono font-semibold text-[hsl(var(--destructive)/.6)]">{fmtPrice(state.band2Upper)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span>Short zone above</span>
             <span className="fam-mono font-semibold text-[hsl(var(--destructive))]">{fmtPrice(state.band1Upper)}</span>
@@ -251,6 +269,12 @@ function VwapCard({ state }: { state: VwapState }) {
             <span>Long zone below</span>
             <span className="fam-mono font-semibold text-[hsl(var(--chart-4))]">{fmtPrice(state.band1Lower)}</span>
           </div>
+          {state.band2Lower !== null && (
+            <div className="flex items-center justify-between">
+              <span>Long extension (+2σ stop)</span>
+              <span className="fam-mono font-semibold text-[hsl(var(--chart-4)/.6)]">{fmtPrice(state.band2Lower)}</span>
+            </div>
+          )}
         </div>
       ) : state.status === 'inactive' ? (
         <div className="text-center text-[10px] text-muted-foreground/60">

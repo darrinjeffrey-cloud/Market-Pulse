@@ -246,18 +246,28 @@ function VwapRow({ v, colors }: { v: VwapState; colors: ReturnType<typeof useCol
   return (
     <View style={vrow.wrap}>
       <View style={vrow.pill}>
+        <Text style={[vrow.label, { color: colors.destructive + '88' }]}>+2σ</Text>
+        <Text style={[vrow.value, { color: colors.destructive + 'AA', fontSize: 10 }]}>{fmtPrice(v.band2Upper)}</Text>
+      </View>
+      <View style={[vrow.divider, { backgroundColor: colors.border }]} />
+      <View style={vrow.pill}>
+        <Text style={[vrow.label, { color: colors.destructive + 'CC' }]}>+1σ</Text>
+        <Text style={[vrow.value, { color: colors.destructive, fontSize: 11 }]}>{fmtPrice(v.band1Upper)}</Text>
+      </View>
+      <View style={[vrow.divider, { backgroundColor: colors.border }]} />
+      <View style={vrow.pill}>
         <Text style={[vrow.label, { color: colors.mutedForeground }]}>VWAP</Text>
         <Text style={[vrow.value, { color: colors.foreground }]}>{fmtPrice(v.vwap)}</Text>
       </View>
       <View style={[vrow.divider, { backgroundColor: colors.border }]} />
       <View style={vrow.pill}>
-        <Text style={[vrow.label, { color: colors.mutedForeground }]}>+1σ</Text>
-        <Text style={[vrow.value, { color: colors.mutedForeground }]}>{fmtPrice(v.band1Upper)}</Text>
+        <Text style={[vrow.label, { color: colors.success + 'CC' }]}>−1σ</Text>
+        <Text style={[vrow.value, { color: colors.success, fontSize: 11 }]}>{fmtPrice(v.band1Lower)}</Text>
       </View>
       <View style={[vrow.divider, { backgroundColor: colors.border }]} />
       <View style={vrow.pill}>
-        <Text style={[vrow.label, { color: colors.mutedForeground }]}>−1σ</Text>
-        <Text style={[vrow.value, { color: colors.mutedForeground }]}>{fmtPrice(v.band1Lower)}</Text>
+        <Text style={[vrow.label, { color: colors.success + '88' }]}>−2σ</Text>
+        <Text style={[vrow.value, { color: colors.success + 'AA', fontSize: 10 }]}>{fmtPrice(v.band2Lower)}</Text>
       </View>
     </View>
   );
