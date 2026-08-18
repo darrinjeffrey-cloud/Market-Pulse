@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
-import { OvernightPanel } from './OvernightPanel';
 import { IctPanel } from './IctPanel';
 import {
   Activity,
@@ -1622,7 +1621,7 @@ export function MarketDashboard() {
         {snapshot && <VwapPanel snapshotTimestamp={snapshot.timestamp} />}
 
         {/* Overnight High/Low reference levels */}
-        {snapshot && <OvernightPanel snapshotTimestamp={snapshot.timestamp} />}
+        
 
         {snapshot && <IctPanel snapshotTimestamp={snapshot.timestamp} />}
 
