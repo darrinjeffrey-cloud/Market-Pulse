@@ -12,7 +12,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Polyline } from 'react-native-svg';
 import { useColors } from '@/hooks/useColors';
 import { getApiBase, getAuthHeaders } from '@/hooks/tokenStore';
 
@@ -44,29 +43,6 @@ interface VwapState {
 interface VwapSnapshot {
   timestamp: string;
   markets:   Record<string, VwapState>;
-}
-
-interface VwapSeriesPoint {
-  timestamp:  string;
-  price:      number;
-  vwap:       number;
-  band1Upper: number;
-  band1Lower: number;
-  band2Upper: number;
-  band2Lower: number;
-}
-
-interface VwapSeriesState {
-  symbol:        string;
-  displayName:   string;
-  points:        VwapSeriesPoint[];
-  overnightHigh: number | null;
-  overnightLow:  number | null;
-}
-
-interface VwapSeriesSnapshot {
-  timestamp: string;
-  markets:   Record<string, VwapSeriesState>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -203,76 +179,6 @@ const gauge = StyleSheet.create({
   },
 });
 
-// ─── Session sparkline ────────────────────────────────────────────────────────
-
-const SPARK_H = 44;
-
-function Sparkline({ series, colors }: {
-  series: VwapSeriesState;
-  colors: ReturnType<typeof useColors>;
-}) {
-  const [width, setWidth] = useState(0);
-  const pts = series.points;
-  if (pts.length < 2) return null;
-
-  const values = pts.flatMap((p) => [p.price, p.vwap]);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(max - min, 0.25);
-  const pad = 3;
-
-  const toXY = (v: number, i: number) => {
-    const x = (i / (pts.length - 1)) * (width || 1);
-    const y = pad + (1 - (v - min) / span) * (SPARK_H - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  };
-
-  const pricePoints = pts.map((p, i) => toXY(p.price, i)).join(' ');
-  const vwapPoints  = pts.map((p, i) => toXY(p.vwap, i)).join(' ');
-
-  return (
-    <View
-      style={spark.wrap}
-      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-    >
-      {width > 0 && (
-        <Svg width={width} height={SPARK_H}>
-          <Polyline
-            points={vwapPoints}
-            fill="none"
-            stroke={colors.mutedForeground}
-            strokeWidth={1}
-            strokeDasharray="4,3"
-          />
-          <Polyline
-            points={pricePoints}
-            fill="none"
-            stroke={colors.foreground}
-            strokeWidth={1.5}
-          />
-        </Svg>
-      )}
-      <View style={spark.legend}>
-        <Text style={[spark.legendText, { color: colors.foreground }]}>— Price</Text>
-        <Text style={[spark.legendText, { color: colors.mutedForeground }]}>┄ VWAP</Text>
-      </View>
-    </View>
-  );
-}
-
-const spark = StyleSheet.create({
-  wrap: { marginTop: 8 },
-  legend: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 2,
-  },
-  legendText: {
-    fontSize: 8,
-    fontFamily: 'Inter_400Regular',
-  },
-});
-
 // ─── Trade level grid ─────────────────────────────────────────────────────────
 
 function LevelGrid({ v, colors }: { v: VwapState; colors: ReturnType<typeof useColors> }) {
@@ -397,7 +303,7 @@ const vrow = StyleSheet.create({
 
 // ─── Individual VWAP card ─────────────────────────────────────────────────────
 
-function VwapCard({ v, series }: { v: VwapState; series?: VwapSeriesState }) {
+function VwapCard({ v }: { v: VwapState }) {
   const colors = useColors();
   const isLong   = v.status === 'long_setup';
   const isShort  = v.status === 'short_setup';
@@ -421,9 +327,6 @@ function VwapCard({ v, series }: { v: VwapState; series?: VwapSeriesState }) {
         <View style={card.spacer} />
         <StatusBadge status={v.status} signal={v.signal} colors={colors} />
       </View>
-
-      {/* Session sparkline */}
-      {series && <Sparkline series={series} colors={colors} />}
 
       {/* VWAP row */}
       <VwapRow v={v} colors={colors} />
@@ -516,7 +419,6 @@ interface VwapPanelProps {
 export default function VwapPanel({ snapshotTimestamp }: VwapPanelProps) {
   const colors = useColors();
   const [data, setData]       = useState<VwapSnapshot | null>(null);
-  const [series, setSeries]   = useState<VwapSeriesSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
 
@@ -533,16 +435,6 @@ export default function VwapPanel({ snapshotTimestamp }: VwapPanelProps) {
         if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
-      }
-      // Sparkline series — best-effort; failure never blocks the panel
-      try {
-        const res = await fetch(`${getApiBase()}/market/vwap/series`, { credentials: 'include', headers: getAuthHeaders() });
-        if (res.ok) {
-          const json = (await res.json()) as VwapSeriesSnapshot;
-          if (!cancelled) setSeries(json);
-        }
-      } catch {
-        // ignore — panel still shows scalar values
       }
     }
 
@@ -574,7 +466,7 @@ export default function VwapPanel({ snapshotTimestamp }: VwapPanelProps) {
         </Text>
       ) : (
         vwaps.map((v) => (
-          <VwapCard key={v.symbol} v={v} series={series?.markets[v.symbol]} />
+          <VwapCard key={v.symbol} v={v} />
         ))
       )}
     </View>
