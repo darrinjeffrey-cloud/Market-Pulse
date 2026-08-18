@@ -15,6 +15,7 @@ import { startLiveFeed } from "../lib/live-feed";
 import { computeOrbSnapshot } from "../lib/orb-engine";
 import { computeVwapSnapshot, computeVwapSeriesSnapshot } from "../lib/vwap-engine";
 import { computeOvernightSnapshot } from "../lib/overnight-engine";
+import { computeIctSnapshot } from "../lib/ict-engine";
 
 const router: IRouter = Router();
 
@@ -147,6 +148,14 @@ router.get("/market/vwap/series", (_req, res): void => {
 
 router.get("/market/overnight", (_req, res): void => {
   res.json(computeOvernightSnapshot());
+});
+
+// ---------------------------------------------------------------------------
+// ICT Liquidity Sweep + FVG Signal
+// ---------------------------------------------------------------------------
+
+router.get("/market/ict", (_req, res): void => {
+  res.json(computeIctSnapshot());
 });
 
 export default router;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
 import { OvernightPanel } from './OvernightPanel';
+import { IctPanel } from './IctPanel';
 import {
   Activity,
   AlertTriangle,
@@ -1622,6 +1623,8 @@ export function MarketDashboard() {
 
         {/* Overnight High/Low reference levels */}
         {snapshot && <OvernightPanel snapshotTimestamp={snapshot.timestamp} />}
+
+        {snapshot && <IctPanel snapshotTimestamp={snapshot.timestamp} />}
 
         <footer className="fam-rise fam-rise-4 mt-8 flex flex-col justify-between gap-3 border-t border-border/70 pt-4 text-[10px] text-muted-foreground sm:flex-row sm:items-center">
           <div className="flex items-center gap-2"><Clock3 className="h-3 w-3" /> Stream updates are reflected as received.</div>
