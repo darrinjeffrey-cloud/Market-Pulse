@@ -1,0 +1,338 @@
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+import pandas as pd
+
+
+@dataclass
+class OHLCV:
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class FuturesAnalysisEngine:
+    ALLOWED_CONTRACTS = {"NQ", "MNQ", "ES", "MES", "GC", "MGC", "CL", "MCL"}
+
+    def __init__(self, symbol: str, min_rr: float = 2.0):
+        symbol_upper = symbol.upper()
+        if symbol_upper not in self.ALLOWED_CONTRACTS:
+            raise ValueError(
+                f"Symbol '{symbol}' not supported. Engine supports only: {self.ALLOWED_CONTRACTS}"
+            )
+        self.symbol = symbol_upper
+        self.min_rr = min_rr
+
+    # -------------------------------------------------------------------------
+    # Core Indicator & Structure Logic
+    # -------------------------------------------------------------------------
+
+    def _extract_session_levels(self, df_15m: pd.DataFrame) -> Dict[str, float]:
+        """Extracts major session liquidity levels (PDH, PDL, Overnight High/Low, Session High/Low)."""
+        return {
+            "PDH": df_15m["high"].iloc[:-20].max() if len(df_15m) > 20 else df_15m["high"].max(),
+            "PDL": df_15m["low"].iloc[:-20].min() if len(df_15m) > 20 else df_15m["low"].min(),
+            "ONH": df_15m["high"].iloc[-16:-8].max() if len(df_15m) >= 16 else df_15m["high"].max(),
+            "ONL": df_15m["low"].iloc[-16:-8].min() if len(df_15m) >= 16 else df_15m["low"].min(),
+            "CSH": df_15m["high"].iloc[-8:].max(),
+            "CSL": df_15m["low"].iloc[-8:].min(),
+        }
+
+    def _detect_fvg(self, df: pd.DataFrame) -> List[Dict]:
+        """Identifies active Fair Value Gaps (FVG) in the dataframe."""
+        fvgs = []
+        for i in range(2, len(df)):
+            # Bullish FVG: Low of candle i > High of candle i-2
+            if df["low"].iloc[i] > df["high"].iloc[i - 2]:
+                fvgs.append({
+                    "type": "BULLISH",
+                    "top": df["low"].iloc[i],
+                    "bottom": df["high"].iloc[i - 2],
+                    "index": i,
+                })
+            # Bearish FVG: High of candle i < Low of candle i-2
+            elif df["high"].iloc[i] < df["low"].iloc[i - 2]:
+                fvgs.append({
+                    "type": "BEARISH",
+                    "top": df["low"].iloc[i - 2],
+                    "bottom": df["high"].iloc[i],
+                    "index": i,
+                })
+        return fvgs
+
+    def _determine_bias(self, df: pd.DataFrame) -> str:
+        """Determines market bias using EMA alignment and Swing Higher Highs/Lower Lows."""
+        df = df.copy()
+        df["ema9"] = df["close"].ewm(span=9, adjust=False).mean()
+        df["ema21"] = df["close"].ewm(span=21, adjust=False).mean()
+
+        last = df.iloc[-1]
+        prev_swing_high = df["high"].iloc[-10:-1].max()
+        prev_swing_low = df["low"].iloc[-10:-1].min()
+
+        if last["close"] > df["ema9"].iloc[-1] > df["ema21"].iloc[-1] and last["high"] > prev_swing_high:
+            return "Bullish"
+        elif last["close"] < df["ema9"].iloc[-1] < df["ema21"].iloc[-1] and last["low"] < prev_swing_low:
+            return "Bearish"
+        return "Neutral"
+
+    def _check_liquidity_sweep(self, df: pd.DataFrame, key_level: float, side: str) -> bool:
+        """Checks if price breached key liquidity level and closed back within structure."""
+        recent_bars = df.iloc[-5:]
+        if side == "SSL":  # Sell-Side Liquidity (looking for bullish sweep)
+            swept = recent_bars["low"].min() < key_level
+            reclaimed = recent_bars["close"].iloc[-1] > key_level
+            return swept and reclaimed
+        elif side == "BSL":  # Buy-Side Liquidity (looking for bearish sweep)
+            swept = recent_bars["high"].max() > key_level
+            reclaimed = recent_bars["close"].iloc[-1] < key_level
+            return swept and reclaimed
+        return False
+
+    # -------------------------------------------------------------------------
+    # Execution Analysis
+    # -------------------------------------------------------------------------
+
+    def analyze(
+        self,
+        df_15m: pd.DataFrame,
+        df_5m: pd.DataFrame,
+        df_1m: pd.DataFrame,
+        imminent_news: bool = False,
+    ) -> str:
+        # Validate Data Integrity
+        if df_15m.empty or df_5m.empty or df_1m.empty or len(df_5m) < 20:
+            return self._build_output(
+                signal="WAIT",
+                confidence=0,
+                bias_15m="Neutral",
+                struct_5m="Neutral",
+                trade_reason="Insufficient or unreliable market data provided.",
+                what_to_wait_for="Complete OHLCV data feed across 15M, 5M, and 1M timeframes.",
+            )
+
+        # 1. Structure Analysis
+        bias_15m = self._determine_bias(df_15m)
+        struct_5m = self._determine_bias(df_5m)
+        levels = self._extract_session_levels(df_15m)
+        fvgs_5m = self._detect_fvg(df_5m)
+
+        current_price = df_1m["close"].iloc[-1]
+
+        # Define key Liquidity Pools
+        bsl_level = max(levels["PDH"], levels["ONH"], levels["CSH"])
+        ssl_level = min(levels["PDL"], levels["ONL"], levels["CSL"])
+
+        # 2. Setup Evaluation
+        ssl_swept = self._check_liquidity_sweep(df_5m, ssl_level, "SSL")
+        bsl_swept = self._check_liquidity_sweep(df_5m, bsl_level, "BSL")
+
+        recent_fvg = fvgs_5m[-1] if fvgs_5m else None
+
+        signal = "WAIT"
+        confidence = 50
+        trade_reason = ""
+        what_to_wait_for = ""
+
+        entry_zone = (0.0, 0.0)
+        stop_loss = 0.0
+        tp1, tp2, tp3 = 0.0, 0.0, None
+        rr_ratio = 0.0
+
+        # --- BULLISH SCENARIO ---
+        if bias_15m == "Bullish" and struct_5m == "Bullish" and ssl_swept and recent_fvg and recent_fvg["type"] == "BULLISH":
+            fvg_low, fvg_high = recent_fvg["bottom"], recent_fvg["top"]
+
+            # Prevent chasing if price displaced too far above FVG
+            if current_price > fvg_high * 1.005:
+                signal = "WAIT"
+                what_to_wait_for = f"Price to retrace into 5M Bullish FVG Zone ({fvg_low:.2f} - {fvg_high:.2f})."
+                trade_reason = "Price has displaced significantly past the ideal entry zone (chasing risk)."
+            else:
+                signal = "BUY"
+                entry_zone = (fvg_low, fvg_high)
+                entry_mid = (fvg_low + fvg_high) / 2
+                stop_loss = df_5m["low"].iloc[-5:].min()  # Stop under the sweep low
+
+                risk = entry_mid - stop_loss
+                if risk > 0:
+                    tp1 = entry_mid + (risk * 1.5)
+                    tp2 = bsl_level
+                    tp3 = bsl_level + (risk * 1.0) if bsl_level > tp2 else None
+                    rr_ratio = round((tp2 - entry_mid) / risk, 2)
+
+                confidence = 85
+                trade_reason = "SSL swept on 5M, followed by strong bullish CHoCH displacement leaving an active 5M FVG."
+
+        # --- BEARISH SCENARIO ---
+        elif bias_15m == "Bearish" and struct_5m == "Bearish" and bsl_swept and recent_fvg and recent_fvg["type"] == "BEARISH":
+            fvg_low, fvg_high = recent_fvg["bottom"], recent_fvg["top"]
+
+            # Prevent chasing if price displaced too far below FVG
+            if current_price < fvg_low * 0.995:
+                signal = "WAIT"
+                what_to_wait_for = f"Price to retrace up into 5M Bearish FVG Zone ({fvg_low:.2f} - {fvg_high:.2f})."
+                trade_reason = "Price has displaced significantly past the ideal entry zone (chasing risk)."
+            else:
+                signal = "SELL"
+                entry_zone = (fvg_low, fvg_high)
+                entry_mid = (fvg_low + fvg_high) / 2
+                stop_loss = df_5m["high"].iloc[-5:].max()  # Stop above the sweep high
+
+                risk = stop_loss - entry_mid
+                if risk > 0:
+                    tp1 = entry_mid - (risk * 1.5)
+                    tp2 = ssl_level
+                    tp3 = ssl_level - (risk * 1.0) if ssl_level < tp2 else None
+                    rr_ratio = round((entry_mid - tp2) / risk, 2)
+
+                confidence = 85
+                trade_reason = "BSL swept on 5M, followed by strong bearish CHoCH displacement leaving an active 5M FVG."
+
+        # --- WAIT / NO SETUP SCENARIOS ---
+        else:
+            signal = "WAIT"
+            if bias_15m != struct_5m:
+                confidence -= 20
+                trade_reason = "Timeframe divergence: 15M Bias and 5M Structure are conflicting."
+                what_to_wait_for = "Alignment between 15M trend and 5M structure shift."
+            elif imminent_news:
+                confidence -= 30
+                trade_reason = "Major economic release scheduled imminent. High volatility risk."
+                what_to_wait_for = "News event resolution and market structure stabilization post-release."
+            else:
+                trade_reason = "No high-probability liquidity sweep + displacement setup confirmed."
+                what_to_wait_for = "Clear sweep of key BSL/SSL followed by CHoCH displacement leaving an open 5M FVG."
+
+        # Filter out setups with poor R:R
+        if signal in ["BUY", "SELL"] and rr_ratio < self.min_rr:
+            signal = "WAIT"
+            confidence -= 15
+            what_to_wait_for = f"Deeper retracement inside FVG to achieve minimum Risk/Reward ratio of 1:{self.min_rr}."
+            trade_reason = f"Setup rejected due to unfavorable Risk/Reward ratio ({rr_ratio:.2f} < {self.min_rr})."
+
+        # Formatted string generation
+        fvg_str = f"{recent_fvg['bottom']:.2f} - {recent_fvg['top']:.2f}" if recent_fvg else "N/A"
+        entry_str = f"{entry_zone[0]:.2f} - {entry_zone[1]:.2f}" if signal != "WAIT" else "N/A"
+        invalidation_str = f"Price close beyond {stop_loss:.2f}" if signal != "WAIT" else "N/A"
+
+        return self._build_output(
+            signal=signal,
+            confidence=confidence,
+            bias_15m=bias_15m,
+            struct_5m=struct_5m,
+            entry_zone=entry_str,
+            stop_loss=f"{stop_loss:.2f}" if signal != "WAIT" else "N/A",
+            tp1=f"{tp1:.2f}" if signal != "WAIT" else "N/A",
+            tp2=f"{tp2:.2f}" if signal != "WAIT" else "N/A",
+            tp3=f"{tp3:.2f}" if tp3 else "N/A",
+            rr=f"1:{rr_ratio:.2f}" if signal != "WAIT" else "N/A",
+            bsl=f"{bsl_level:.2f}",
+            ssl=f"{ssl_level:.2f}",
+            fvg=fvg_str,
+            invalidation=invalidation_str,
+            trade_reason=trade_reason,
+            what_to_wait_for=what_to_wait_for,
+        )
+
+    def _build_output(
+        self,
+        signal: str,
+        confidence: int,
+        bias_15m: str,
+        struct_5m: str,
+        trade_reason: str,
+        what_to_wait_for: str,
+        entry_zone: str = "N/A",
+        stop_loss: str = "N/A",
+        tp1: str = "N/A",
+        tp2: str = "N/A",
+        tp3: str = "N/A",
+        rr: str = "N/A",
+        bsl: str = "N/A",
+        ssl: str = "N/A",
+        fvg: str = "N/A",
+        invalidation: str = "N/A",
+    ) -> str:
+        return f"""FUTURES CONTRACT:
+{self.symbol}
+
+SIGNAL:
+{signal}
+
+CONFIDENCE:
+{confidence}%
+
+15M BIAS:
+{bias_15m}
+
+5M STRUCTURE:
+{struct_5m}
+
+ENTRY ZONE:
+{entry_zone}
+
+STOP LOSS:
+{stop_loss}
+
+TAKE PROFIT 1:
+{tp1}
+
+TAKE PROFIT 2:
+{tp2}
+
+TAKE PROFIT 3:
+{tp3}
+
+RISK/REWARD:
+{rr}
+
+BSL:
+{bsl}
+
+SSL:
+{ssl}
+
+KEY FVG:
+{fvg}
+
+INVALIDATION:
+{invalidation}
+
+TRADE REASON:
+{trade_reason}
+
+WHAT TO WAIT FOR:
+{what_to_wait_for}"""
+
+
+# -------------------------------------------------------------------------
+# Usage Example
+# -------------------------------------------------------------------------
+if __name__ == "__main__":
+    # Mock Pandas OHLCV data structures for illustration
+    dates = pd.date_range("2026-08-18 09:30", periods=30, freq="5min")
+    mock_df = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": [20000 + i * 2 for i in range(30)],
+            "high": [20005 + i * 2 for i in range(30)],
+            "low": [19995 + i * 2 for i in range(30)],
+            "close": [20002 + i * 2 for i in range(30)],
+            "volume": [1000] * 30,
+        }
+    )
+
+    engine = FuturesAnalysisEngine(symbol="MNQ", min_rr=2.0)
+
+    # Run analysis
+    report = engine.analyze(
+        df_15m=mock_df,
+        df_5m=mock_df,
+        df_1m=mock_df,
+        imminent_news=False,
+    )
+
+    print(report)
