@@ -18,6 +18,12 @@
  */
 
 import { buffers, getWatchedSymbols } from "./market-engine.js";
+import {
+  overnightWindow,
+  overnightHLFromBars,
+  etMinutesOfDay,
+  RTH_OPEN_ET_MINS,
+} from "./session-bounds.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -203,6 +209,95 @@ function computeState(symbol: string): VwapState {
 
   // ── Watching — price within ±1σ or no reversal candle yet ───────────────
   return { ...base, status: "watching" };
+}
+
+// ─── Session time series ──────────────────────────────────────────────────────
+
+/** Series ends at 4:00 PM ET — same close as the scalar VWAP signal window. */
+const SERIES_RTH_CLOSE_ET_MINS = 16 * 60;
+
+export type VwapSeriesPoint = {
+  timestamp:  string;  // ISO-8601 of the 1-min bar
+  price:      number;  // bar close
+  vwap:       number;  // running session VWAP up to and including this bar
+  band1Upper: number;  // VWAP + 1σ (running)
+  band1Lower: number;  // VWAP − 1σ (running)
+  band2Upper: number;  // VWAP + 2σ (running)
+  band2Lower: number;  // VWAP − 2σ (running)
+};
+
+export type VwapSeriesState = {
+  symbol:        string;
+  displayName:   string;
+  points:        VwapSeriesPoint[];
+  overnightHigh: number | null;
+  overnightLow:  number | null;
+};
+
+export type VwapSeriesSnapshot = {
+  timestamp: string;
+  markets:   Record<string, VwapSeriesState>;
+};
+
+function computeSeries(symbol: string, now: number): VwapSeriesState {
+  const displayName = toDisplayName(symbol);
+  const allBars = buffers.get(symbol) ?? [];
+
+  // Overnight H/L reference levels (DST-aware shared session window)
+  const win = overnightWindow(now);
+  const { onHigh, onLow } = overnightHLFromBars(allBars, win);
+
+  const blank: VwapSeriesState = {
+    symbol, displayName, points: [],
+    overnightHigh: onHigh != null ? fmt2(onHigh) : null,
+    overnightLow:  onLow  != null ? fmt2(onLow)  : null,
+  };
+
+  // DST-aware RTH gate: 9:30 AM – 4:00 PM ET (matches the scalar VWAP panel's
+  // signal window, computed via the shared ET session-boundary helpers).
+  const etMins = etMinutesOfDay(now);
+  if (etMins < RTH_OPEN_ET_MINS || etMins >= SERIES_RTH_CLOSE_ET_MINS) return blank;
+
+  // During RTH the completed overnight window ends exactly at today's 9:30 AM
+  // ET open — use it as the DST-aware session anchor for the bar filter.
+  const rthStart = win.phase === "rth" ? win.end : now - (etMins - RTH_OPEN_ET_MINS) * 60_000;
+  const rthBars  = allBars.filter(b => b.ts >= rthStart);
+  if (rthBars.length === 0) return blank;
+
+  // Cumulative VWAP + σ per bar (same math as computeState, but running)
+  let sumVolume = 0, sumTpVol = 0, sumTp2Vol = 0;
+  const points: VwapSeriesPoint[] = [];
+  for (const bar of rthBars) {
+    const tp  = (bar.high + bar.low + bar.close) / 3;
+    const vol = bar.volume > 0 ? bar.volume : 1;
+    sumVolume += vol;
+    sumTpVol  += tp * vol;
+    sumTp2Vol += tp * tp * vol;
+
+    const vwap     = sumTpVol / sumVolume;
+    const variance = (sumTp2Vol / sumVolume) - (vwap * vwap);
+    const sigma    = Math.max(Math.sqrt(Math.max(variance, 0)), TICK_SIZE * 2);
+
+    points.push({
+      timestamp:  new Date(bar.ts).toISOString(),
+      price:      fmt2(bar.close),
+      vwap:       fmt2(vwap),
+      band1Upper: fmt2(vwap + sigma),
+      band1Lower: fmt2(vwap - sigma),
+      band2Upper: fmt2(vwap + sigma * 2),
+      band2Lower: fmt2(vwap - sigma * 2),
+    });
+  }
+
+  return { ...blank, points };
+}
+
+export function computeVwapSeriesSnapshot(now: number = Date.now()): VwapSeriesSnapshot {
+  const markets: Record<string, VwapSeriesState> = {};
+  for (const symbol of getWatchedSymbols()) {
+    markets[symbol] = computeSeries(symbol, now);
+  }
+  return { timestamp: new Date(now).toISOString(), markets };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

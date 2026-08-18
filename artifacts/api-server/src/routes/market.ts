@@ -13,7 +13,7 @@ import {
 } from "../lib/market-engine";
 import { startLiveFeed } from "../lib/live-feed";
 import { computeOrbSnapshot } from "../lib/orb-engine";
-import { computeVwapSnapshot } from "../lib/vwap-engine";
+import { computeVwapSnapshot, computeVwapSeriesSnapshot } from "../lib/vwap-engine";
 import { computeOvernightSnapshot } from "../lib/overnight-engine";
 
 const router: IRouter = Router();
@@ -133,6 +133,12 @@ router.get("/market/orb", (_req, res): void => {
 
 router.get("/market/vwap", (_req, res): void => {
   res.json(computeVwapSnapshot());
+});
+
+// Time series of price vs running VWAP ± σ bands for the current RTH session,
+// plus overnight H/L reference levels — used by the mini session charts.
+router.get("/market/vwap/series", (_req, res): void => {
+  res.json(computeVwapSeriesSnapshot());
 });
 
 // ---------------------------------------------------------------------------

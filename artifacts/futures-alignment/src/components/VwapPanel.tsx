@@ -11,6 +11,15 @@ import {
   ArrowUpRight,
   Minus,
 } from 'lucide-react';
+import {
+  ComposedChart,
+  Line,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +49,29 @@ type VwapState = {
 type VwapSnapshot = {
   timestamp: string;
   markets:   Record<string, VwapState>;
+};
+
+type VwapSeriesPoint = {
+  timestamp:  string;
+  price:      number;
+  vwap:       number;
+  band1Upper: number;
+  band1Lower: number;
+  band2Upper: number;
+  band2Lower: number;
+};
+
+type VwapSeriesState = {
+  symbol:        string;
+  displayName:   string;
+  points:        VwapSeriesPoint[];
+  overnightHigh: number | null;
+  overnightLow:  number | null;
+};
+
+type VwapSeriesSnapshot = {
+  timestamp: string;
+  markets:   Record<string, VwapSeriesState>;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -149,9 +181,92 @@ function DeviationGauge({ sigmas }: { sigmas: number }) {
   );
 }
 
+// ─── Mini session chart ───────────────────────────────────────────────────────
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit', hour12: false,
+    timeZone: 'America/New_York',
+  });
+}
+
+function SessionChart({ series }: { series: VwapSeriesState }) {
+  if (series.points.length < 2) return null;
+
+  const data = series.points.map((p) => ({ ...p, time: fmtTime(p.timestamp) }));
+
+  // Y domain: cover bands, price, and overnight levels with a little padding
+  const values: number[] = [];
+  for (const p of series.points) {
+    values.push(p.price, p.band2Upper, p.band2Lower);
+  }
+  if (series.overnightHigh != null) values.push(series.overnightHigh);
+  if (series.overnightLow != null) values.push(series.overnightLow);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max((max - min) * 0.05, 0.5);
+
+  return (
+    <div className="mb-3 rounded border border-border/40 bg-background/40 px-1 pt-2">
+      <div className="px-2 text-[8px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+        Session · price vs VWAP ±σ
+      </div>
+      <div className="h-28 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
+            <XAxis dataKey="time" hide />
+            <YAxis domain={[min - pad, max + pad]} hide />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'hsl(var(--card))',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: 6,
+                fontSize: 10,
+                padding: '4px 8px',
+              }}
+              labelStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 9 }}
+              formatter={(value: number, name: string) => [fmtPrice(value), name]}
+            />
+            {/* ±2σ bands — faintest */}
+            <Line dataKey="band2Upper" name="+2σ" stroke="hsl(var(--destructive))" strokeOpacity={0.25} strokeWidth={1} dot={false} isAnimationActive={false} />
+            <Line dataKey="band2Lower" name="−2σ" stroke="hsl(var(--chart-4))" strokeOpacity={0.25} strokeWidth={1} dot={false} isAnimationActive={false} />
+            {/* ±1σ bands */}
+            <Line dataKey="band1Upper" name="+1σ" stroke="hsl(var(--destructive))" strokeOpacity={0.5} strokeWidth={1} dot={false} isAnimationActive={false} />
+            <Line dataKey="band1Lower" name="−1σ" stroke="hsl(var(--chart-4))" strokeOpacity={0.5} strokeWidth={1} dot={false} isAnimationActive={false} />
+            {/* VWAP */}
+            <Line dataKey="vwap" name="VWAP" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+            {/* Price — most prominent */}
+            <Line dataKey="price" name="Price" stroke="hsl(var(--foreground))" strokeWidth={1.75} dot={false} isAnimationActive={false} />
+            {/* Overnight H/L reference lines */}
+            {series.overnightHigh != null && (
+              <ReferenceLine
+                y={series.overnightHigh}
+                stroke="hsl(var(--destructive))"
+                strokeDasharray="6 4"
+                strokeOpacity={0.6}
+                label={{ value: `ON H ${fmtPrice(series.overnightHigh)}`, position: 'insideTopRight', fontSize: 8, fill: 'hsl(var(--destructive))' }}
+              />
+            )}
+            {series.overnightLow != null && (
+              <ReferenceLine
+                y={series.overnightLow}
+                stroke="hsl(var(--chart-4))"
+                strokeDasharray="6 4"
+                strokeOpacity={0.6}
+                label={{ value: `ON L ${fmtPrice(series.overnightLow)}`, position: 'insideBottomRight', fontSize: 8, fill: 'hsl(var(--chart-4))' }}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 // ─── Per-symbol card ──────────────────────────────────────────────────────────
 
-function VwapCard({ state }: { state: VwapState }) {
+function VwapCard({ state, series }: { state: VwapState; series?: VwapSeriesState }) {
   const sym      = state.displayName.replace('.c.0', '');
   const isLong   = state.status === 'long_setup';
   const isShort  = state.status === 'short_setup';
@@ -176,6 +291,9 @@ function VwapCard({ state }: { state: VwapState }) {
         <span className="fam-mono text-[12px] font-bold tracking-tight text-foreground">{sym}</span>
         <StatusBadge state={state} />
       </div>
+
+      {/* Mini session chart */}
+      {series && <SessionChart series={series} />}
 
       {/* VWAP + bands row */}
       {state.vwap !== null && (
@@ -289,11 +407,16 @@ function VwapCard({ state }: { state: VwapState }) {
 
 export function VwapPanel({ snapshotTimestamp }: { snapshotTimestamp?: string }) {
   const [data, setData] = useState<VwapSnapshot | null>(null);
+  const [seriesData, setSeriesData] = useState<VwapSeriesSnapshot | null>(null);
 
   const refresh = () => {
     fetch('/api/market/vwap', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setData(d as VwapSnapshot))
+      .catch(() => {});
+    fetch('/api/market/vwap/series', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSeriesData(d as VwapSeriesSnapshot))
       .catch(() => {});
   };
 
@@ -358,7 +481,11 @@ export function VwapPanel({ snapshotTimestamp }: { snapshotTimestamp?: string })
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {states.map((state) => (
-            <VwapCard key={state.symbol} state={state} />
+            <VwapCard
+              key={state.symbol}
+              state={state}
+              series={seriesData?.markets[state.symbol]}
+            />
           ))}
         </div>
       )}
