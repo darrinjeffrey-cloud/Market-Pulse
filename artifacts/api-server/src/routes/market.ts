@@ -46,6 +46,9 @@ router.get("/market/stream", async (req, res): Promise<void> => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
+  // Tell the browser to reconnect after 1 s if the stream drops (default is 3 s).
+  res.write("retry: 1000\n\n");
+
   const sendSnapshot = (snapshot: MarketSnapshot) => {
     try {
       const parsed = GetMarketSnapshotResponse.parse(snapshot);
@@ -67,11 +70,12 @@ router.get("/market/stream", async (req, res): Promise<void> => {
   // This fires ~once per minute when the live feed delivers a new bar.
   marketEvents.on("snapshot", sendSnapshot);
 
-  // Heartbeat keeps the TCP connection alive through proxies / load balancers
-  // that would otherwise drop idle SSE connections after ~30s.
+  // Heartbeat every 10 s — keeps the connection alive through Replit's proxy
+  // layer which drops idle SSE streams. 25 s was too slow; proxy timeouts can
+  // be as short as 15-20 s on the dev preview path.
   const heartbeat = setInterval(() => {
     res.write(": heartbeat\n\n");
-  }, 25_000);
+  }, 10_000);
 
   req.on("close", () => {
     marketEvents.off("snapshot", sendSnapshot);
