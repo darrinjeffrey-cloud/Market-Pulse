@@ -371,7 +371,7 @@ export default function OvernightPanel({
     try {
       const base    = getApiBase();
       const headers = await getAuthHeaders();
-      const res     = await fetch(`${base}/api/market/overnight`, {
+      const res     = await fetch(`${base}/market/overnight`, {
         headers,
         credentials: 'include',
       });

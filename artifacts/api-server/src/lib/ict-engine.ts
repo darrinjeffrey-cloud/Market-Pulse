@@ -298,7 +298,7 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
         stopLoss   = stop;
         tp1        = parseFloat((mid + risk * 1.5).toFixed(2));
         tp2        = bsl;
-        tp3        = bsl > tp2 ? parseFloat((bsl + risk).toFixed(2)) : null;
+        tp3        = parseFloat((bsl + risk).toFixed(2));
         rrRatio    = parseFloat(((bsl - mid) / risk).toFixed(2));
         confidence = 85;
         tradeReason = "SSL swept on 5M with bullish CHoCH displacement leaving an active 5M FVG.";
@@ -324,7 +324,7 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
         stopLoss   = stop;
         tp1        = parseFloat((mid - risk * 1.5).toFixed(2));
         tp2        = ssl;
-        tp3        = ssl < tp2 ? parseFloat((ssl - risk).toFixed(2)) : null;
+        tp3        = parseFloat((ssl - risk).toFixed(2));
         rrRatio    = parseFloat(((mid - ssl) / risk).toFixed(2));
         confidence = 85;
         tradeReason = "BSL swept on 5M with bearish CHoCH displacement leaving an active 5M FVG.";
@@ -384,7 +384,7 @@ export function computeIctSnapshot(): IctSnapshot {
   const watched = getWatchedSymbols();
   const markets: Record<string, IctState> = {};
   for (const symbol of ICT_SYMBOLS) {
-    if (!watched.has(symbol)) continue;
+    if (!watched.includes(symbol)) continue;
     const displayName = symbol.replace(".v.", ".c.");
     markets[symbol] = analyzeSymbol(symbol, displayName);
   }

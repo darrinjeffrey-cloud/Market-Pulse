@@ -241,8 +241,12 @@ export function IctPanel({ snapshotTimestamp }: { snapshotTimestamp?: string }) 
 
   const refresh = () => {
     fetch('/api/market/ict', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setData(d as IctSnapshot))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) => {
+        if (d && typeof d === 'object' && d.markets && typeof d.markets === 'object') {
+          setData(d as IctSnapshot);
+        }
+      })
       .catch(() => {});
   };
 
