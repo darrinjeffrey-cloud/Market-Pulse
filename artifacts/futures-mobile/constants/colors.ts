@@ -9,13 +9,13 @@
 const palette = {
   // Core surfaces
   background: '#100D08',      // HSL(20, 14%, 5%)
-  foreground: '#EDE8DE',      // HSL(38, 22%, 92%)
+  foreground: '#F8F7F4',      // HSL(38, 15%, 97%)
   card: '#17120B',            // HSL(25, 14%, 8%)
-  cardForeground: '#EDE8DE',
+  cardForeground: '#F8F7F4',
   border: '#2B2015',          // HSL(30, 12%, 18%)
 
   // Semantic aliases for compatibility with useColors() hooks
-  text: '#EDE8DE',
+  text: '#F8F7F4',
   tint: '#F5A800',
 
   // Primary: amber-gold conviction signals
@@ -24,11 +24,11 @@ const palette = {
 
   // Secondary / elevated surface
   secondary: '#201808',       // HSL(28, 13%, 14%)
-  secondaryForeground: '#EDE8DE',
+  secondaryForeground: '#F8F7F4',
 
   // Muted / subdued
   muted: '#191209',           // HSL(25, 11%, 11%)
-  mutedForeground: '#8B7A58', // HSL(32, 9%, 52%)
+  mutedForeground: '#C0AA87', // HSL(32, 12%, 72%)
 
   // Accent: lighter gold
   accent: '#E8A83A',          // HSL(38, 90%, 62%)
