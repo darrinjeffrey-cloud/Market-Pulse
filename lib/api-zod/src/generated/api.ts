@@ -31,6 +31,8 @@ export const GetMarketSnapshotResponse = zod.object({
   "onHigh": zod.number().nullish().describe('Overnight (Globex) session high — prior RTH close to 9:30 AM ET open; null until overnight bars exist'),
   "onLow": zod.number().nullish().describe('Overnight (Globex) session low; null until overnight bars exist'),
   "perTimeframeSetup": zod.record(zod.string(), zod.object({
+  "strategy": zod.enum(['VWAP_REVERSION']),
+  "direction": zod.enum(['LONG', 'SHORT']),
   "entry": zod.number(),
   "stopLoss": zod.number(),
   "riskPts": zod.number(),
@@ -47,12 +49,13 @@ export const GetMarketSnapshotResponse = zod.object({
   "volume": zod.number(),
   "adx": zod.number().describe('ADX 0–100: <20 ranging, 20–40 trending, >40 strong'),
   "rsi": zod.number().describe('RSI-14 0–100: >50 bullish momentum, <50 bearish'),
-  "vwap": zod.number().describe('VWAP anchored to current UTC calendar day'),
+  "vwap": zod.number().describe('VWAP anchored to the current America\/New_York RTH session'),
   "vwapStd1Up": zod.number().describe('VWAP + 1 volume-weighted standard deviation'),
   "vwapStd1Down": zod.number().describe('VWAP − 1 volume-weighted standard deviation'),
   "vwapStd2Up": zod.number().describe('VWAP + 2 volume-weighted standard deviations'),
   "vwapStd2Down": zod.number().describe('VWAP − 2 volume-weighted standard deviations'),
-  "isRTH": zod.boolean().describe('True inside US equity futures RTH (13:30–20:00 UTC)'),
+  "isRTH": zod.boolean().describe('True inside the weekday 09:30–16:00 America\/New_York RTH signal window'),
+  "vwapReversionStatus": zod.enum(['inactive', 'watching', 'long_setup', 'short_setup', 'expired']).describe('VWAP mean-reversion state for this timeframe'),
   "confluenceScore": zod.number().describe('0–5 count of bias factors confirming the active direction'),
   "lastUpdated": zod.coerce.date().describe('ISO-8601 timestamp of the most recent bar used to compute this timeframe')
 }))

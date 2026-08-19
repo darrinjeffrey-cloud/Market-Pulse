@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TimeframeStateDirection } from './timeframeStateDirection';
+import type { TimeframeStateVwapReversionStatus } from './timeframeStateVwapReversionStatus';
 
 export interface TimeframeState {
   rvol: number;
@@ -18,7 +19,7 @@ export interface TimeframeState {
   adx: number;
   /** RSI-14 0–100: >50 bullish momentum, <50 bearish */
   rsi: number;
-  /** VWAP anchored to current UTC calendar day */
+  /** VWAP anchored to the current America/New_York RTH session */
   vwap: number;
   /** VWAP + 1 volume-weighted standard deviation */
   vwapStd1Up: number;
@@ -28,8 +29,10 @@ export interface TimeframeState {
   vwapStd2Up: number;
   /** VWAP − 2 volume-weighted standard deviations */
   vwapStd2Down: number;
-  /** True inside US equity futures RTH (13:30–20:00 UTC) */
+  /** True inside the weekday 09:30–16:00 America/New_York RTH signal window */
   isRTH: boolean;
+  /** VWAP mean-reversion state for this timeframe */
+  vwapReversionStatus: TimeframeStateVwapReversionStatus;
   /** 0–5 count of bias factors confirming the active direction */
   confluenceScore: number;
   /** ISO-8601 timestamp of the most recent bar used to compute this timeframe */

@@ -52,11 +52,50 @@ export function etMinutesOfDay(ms: number): number {
   return et.getUTCHours() * 60 + et.getUTCMinutes();
 }
 
+/** Day of week in America/New_York (0 = Sunday, 6 = Saturday). */
+export function etDayOfWeek(ms: number): number {
+  const offsetMs = getETOffsetHours(new Date(ms)) * HOUR_MS;
+  return new Date(ms + offsetMs).getUTCDay();
+}
+
 /** Epoch-ms of ET midnight for the ET calendar day containing the instant. */
 function etMidnightMs(ms: number): number {
   const offsetMs = getETOffsetHours(new Date(ms)) * HOUR_MS;
   const shifted = ms + offsetMs;
   return shifted - (shifted % DAY_MS) - offsetMs;
+}
+
+export type RthPhase = "inactive" | "active" | "expired";
+
+export type RthWindow = {
+  start: number;
+  end: number;
+  phase: RthPhase;
+};
+
+/**
+ * DST-aware RTH window for the ET calendar day containing `nowMs`.
+ *
+ * `closeEtMins` is configurable because the VWAP signal window ends at
+ * 4:00 PM ET while the broader CME session context remains open until 4:15 PM.
+ */
+export function rthWindow(
+  nowMs: number,
+  closeEtMins: number = RTH_CLOSE_ET_MINS,
+): RthWindow {
+  const tod = etMinutesOfDay(nowMs);
+  const weekday = etDayOfWeek(nowMs);
+  const midnight = etMidnightMs(nowMs);
+  const start = midnight + RTH_OPEN_ET_MINS * 60_000;
+  const end = midnight + closeEtMins * 60_000;
+
+  if (weekday === 0 || weekday === 6 || tod < RTH_OPEN_ET_MINS) {
+    return { start, end, phase: "inactive" };
+  }
+  if (tod >= closeEtMins) {
+    return { start, end, phase: "expired" };
+  }
+  return { start, end, phase: "active" };
 }
 
 export type SessionPhase = "overnight" | "rth";

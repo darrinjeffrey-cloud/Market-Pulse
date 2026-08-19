@@ -26,4 +26,7 @@ export * from './mobileTokenExchangeRequest';
 export * from './mobileTokenExchangeSuccess';
 export * from './timeframeState';
 export * from './timeframeStateDirection';
+export * from './timeframeStateVwapReversionStatus';
 export * from './tradeSetup';
+export * from './tradeSetupDirection';
+export * from './tradeSetupStrategy';

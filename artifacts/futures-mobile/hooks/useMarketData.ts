@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { fetch } from 'expo/fetch';
 import { getAuthHeaders as _getAuthHeadersFromStore } from '@/hooks/tokenStore';
 
@@ -15,11 +15,19 @@ export interface TimeframeState {
   adx: number;
   rsi: number;
   vwap: number;
+  vwapStd1Up: number;
+  vwapStd1Down: number;
+  vwapStd2Up: number;
+  vwapStd2Down: number;
   isRTH: boolean;
+  vwapReversionStatus: 'inactive' | 'watching' | 'long_setup' | 'short_setup' | 'expired';
   confluenceScore: number;
+  lastUpdated: string;
 }
 
 export interface TradeSetup {
+  strategy: 'VWAP_REVERSION';
+  direction: 'LONG' | 'SHORT';
   entry: number;
   stopLoss: number;
   riskPts: number;
@@ -89,6 +97,7 @@ function computeConfidence(
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 function getApiBase(): string {
+  if (Platform.OS === 'web') return '/api';
   const domain = process.env['EXPO_PUBLIC_DOMAIN'];
   return domain ? `https://${domain}/api` : '/api';
 }

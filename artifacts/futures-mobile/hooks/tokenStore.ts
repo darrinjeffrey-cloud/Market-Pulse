@@ -7,6 +7,7 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'market_api_token';
 
@@ -45,11 +46,13 @@ export function getCachedToken(): string | null {
 
 /** Returns the Authorization header object, or {} if unauthenticated. */
 export function getAuthHeaders(): Record<string, string> {
+  if (Platform.OS === 'web') return {};
   return _token ? { Authorization: `Bearer ${_token}` } : {};
 }
 
 /** Returns the base URL for the API server. */
 export function getApiBase(): string {
+  if (Platform.OS === 'web') return '/api';
   const domain = process.env['EXPO_PUBLIC_DOMAIN'];
   return domain ? `https://${domain}/api` : '/api';
 }

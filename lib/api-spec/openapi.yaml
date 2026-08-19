@@ -296,7 +296,7 @@ components:
           description: "RSI-14 0–100: >50 bullish momentum, <50 bearish"
         vwap:
           type: number
-          description: "VWAP anchored to current UTC calendar day"
+          description: "VWAP anchored to the current America/New_York RTH session"
         vwapStd1Up:
           type: number
           description: "VWAP + 1 volume-weighted standard deviation"
@@ -311,7 +311,11 @@ components:
           description: "VWAP − 2 volume-weighted standard deviations"
         isRTH:
           type: boolean
-          description: "True inside US equity futures RTH (13:30–20:00 UTC)"
+          description: "True inside the weekday 09:30–16:00 America/New_York RTH signal window"
+        vwapReversionStatus:
+          type: string
+          enum: [inactive, watching, long_setup, short_setup, expired]
+          description: "VWAP mean-reversion state for this timeframe"
         confluenceScore:
           type: number
           description: "0–5 count of bias factors confirming the active direction"
@@ -319,10 +323,16 @@ components:
           type: string
           format: date-time
           description: "ISO-8601 timestamp of the most recent bar used to compute this timeframe"
-      required: [rvol, atr, direction, volSpike, close, volume, adx, rsi, vwap, vwapStd1Up, vwapStd1Down, vwapStd2Up, vwapStd2Down, isRTH, confluenceScore, lastUpdated]
+      required: [rvol, atr, direction, volSpike, close, volume, adx, rsi, vwap, vwapStd1Up, vwapStd1Down, vwapStd2Up, vwapStd2Down, isRTH, vwapReversionStatus, confluenceScore, lastUpdated]
     TradeSetup:
       type: object
       properties:
+        strategy:
+          type: string
+          enum: [VWAP_REVERSION]
+        direction:
+          type: string
+          enum: [LONG, SHORT]
         entry:
           type: number
         stopLoss:
@@ -335,7 +345,7 @@ components:
           type: number
         tp2:
           type: number
-      required: [entry, stopLoss, riskPts, riskDollarsPerContract, tp1, tp2]
+      required: [strategy, direction, entry, stopLoss, riskPts, riskDollarsPerContract, tp1, tp2]
     MarketState:
       type: object
       properties:

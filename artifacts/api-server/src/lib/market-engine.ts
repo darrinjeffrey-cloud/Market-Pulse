@@ -1,6 +1,20 @@
 import { EventEmitter } from "events";
 import { logger } from "./logger";
-import { overnightHLFromBars, overnightWindow } from "./session-bounds.js";
+import {
+  overnightHLFromBars,
+  overnightWindow,
+  rthWindow,
+} from "./session-bounds.js";
+import {
+  analyzeVwapReversion,
+  calculateVwapBands,
+  currentRthBars,
+  VWAP_SIGNAL_CLOSE_ET_MINS,
+  type VwapBands,
+  type VwapReversionStatus,
+} from "./vwap-reversion.js";
+
+export type { VwapBands } from "./vwap-reversion.js";
 
 const DATASET = "GLBX.MDP3";
 
@@ -83,7 +97,7 @@ type TimeframeState = {
   adx: number;
   /** RSI-14 (0–100): > 50 = bullish momentum, < 50 = bearish */
   rsi: number;
-  /** VWAP anchored to current UTC calendar day */
+  /** VWAP anchored to the current America/New_York RTH session */
   vwap: number;
   /** VWAP + 1 volume-weighted standard deviation */
   vwapStd1Up: number;
@@ -93,15 +107,19 @@ type TimeframeState = {
   vwapStd2Up: number;
   /** VWAP − 2 volume-weighted standard deviations */
   vwapStd2Down: number;
-  /** True when bar falls inside US equity futures RTH (13:30–20:00 UTC) */
+  /** True when bar falls inside weekday 09:30–16:00 ET */
   isRTH: boolean;
+  /** Current VWAP-reversion state for this timeframe. */
+  vwapReversionStatus: VwapReversionStatus;
   /** 0–5: how many of the five bias factors confirm the active direction */
   confluenceScore: number;
   /** ISO-8601 timestamp of the most recent bar used to compute this timeframe */
   lastUpdated: string;
 };
 
-type TradeSetup = {
+export type TradeSetup = {
+  strategy: "VWAP_REVERSION";
+  direction: "LONG" | "SHORT";
   entry: number;
   stopLoss: number;
   riskPts: number;
@@ -368,53 +386,30 @@ function computeRSI(bars: Bar[], period = 14): number {
   return Number((100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
 }
 
-export type VwapBands = {
-  vwap: number;
-  vwapStd1Up: number;
-  vwapStd1Down: number;
-  vwapStd2Up: number;
-  vwapStd2Down: number;
-};
-
 /**
- * VWAP anchored to the current UTC calendar day, with ±1σ / ±2σ deviation
- * bands from the volume-weighted variance (E[tp²] − E[tp]², same bar loop).
- * Falls back to the last 60 bars when no same-day bars exist (e.g. overnight gap).
+ * VWAP anchored to the active DST-aware RTH window, with ±1σ / ±2σ
+ * volume-weighted deviation bands. Outside RTH (or before session bars arrive),
+ * falls back to the latest 60 bars for indicator display only.
  */
-export function computeVWAP(bars: Bar[]): VwapBands {
-  const now = Date.now();
-  const startOfDay = now - (now % (24 * 60 * 60_000));
-  const src = bars.filter((b) => b.ts >= startOfDay);
-  const source = src.length > 0 ? src : bars.slice(-60);
-  let cumTPV = 0, cumTP2V = 0, cumVol = 0;
-  for (const b of source) {
-    const tp = (b.high + b.low + b.close) / 3;
-    cumTPV += tp * b.volume;
-    cumTP2V += tp * tp * b.volume;
-    cumVol += b.volume;
-  }
+export function computeVWAP(bars: Bar[], now: number = Date.now()): VwapBands {
+  const rthBars = currentRthBars(bars, now);
+  const source = rthBars.length > 0 ? rthBars : bars.slice(-60);
   const last = bars[bars.length - 1];
-  const vwap = cumVol > 0 ? cumTPV / cumVol : last.close;
-  const variance = cumVol > 0 ? cumTP2V / cumVol - vwap * vwap : 0;
-  const sigma = Math.sqrt(Math.max(variance, 0));
-  const r = (n: number) => Number(n.toFixed(2));
-  return {
-    vwap: r(vwap),
-    vwapStd1Up: r(vwap + sigma),
-    vwapStd1Down: r(vwap - sigma),
-    vwapStd2Up: r(vwap + sigma * 2),
-    vwapStd2Down: r(vwap - sigma * 2),
+  return calculateVwapBands(source) ?? {
+    vwap: Number(last.close.toFixed(2)),
+    vwapStd1Up: Number(last.close.toFixed(2)),
+    vwapStd1Down: Number(last.close.toFixed(2)),
+    vwapStd2Up: Number(last.close.toFixed(2)),
+    vwapStd2Down: Number(last.close.toFixed(2)),
   };
 }
 
 /**
- * True if the bar timestamp falls inside US equity futures Regular Trading Hours:
- * 09:30–16:00 ET ≈ 13:30–20:00 UTC (adequate for CME equity index futures).
+ * True if the bar timestamp falls inside the weekday 09:30–16:00 ET VWAP
+ * signal window, with DST handled by the shared session helper.
  */
 function detectRTH(ts: number): boolean {
-  const d = new Date(ts);
-  const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
-  return mins >= 13 * 60 + 30 && mins < 20 * 60;
+  return rthWindow(ts, VWAP_SIGNAL_CLOSE_ET_MINS).phase === "active";
 }
 
 /**
@@ -524,7 +519,7 @@ export function determineDirectionalBias(bars: Bar[]): {
   return { direction: "NEUTRAL", adx, rsi, confluenceScore: Math.max(bullScore, bearScore) };
 }
 
-function timeframeState(bars: Bar[]): TimeframeState | null {
+function timeframeState(bars: Bar[], now: number): TimeframeState | null {
   if (bars.length < 20) return null;
   const current = bars[bars.length - 1];
   const volumeWindow = bars.slice(-15, -1).map((bar) => bar.volume);
@@ -540,6 +535,7 @@ function timeframeState(bars: Bar[]): TimeframeState | null {
   });
   const atr = average(trueRanges.slice(-14));
   const { direction, adx, rsi, confluenceScore } = determineDirectionalBias(bars);
+  const reversion = analyzeVwapReversion(bars, now);
 
   return {
     rvol: Number(rvol.toFixed(2)),
@@ -550,72 +546,11 @@ function timeframeState(bars: Bar[]): TimeframeState | null {
     volume: Math.round(current.volume),
     adx,
     rsi,
-    ...computeVWAP(bars),
+    ...computeVWAP(bars, now),
     isRTH: detectRTH(current.ts),
+    vwapReversionStatus: reversion.status,
     confluenceScore,
     lastUpdated: new Date(current.ts).toISOString(),
-  };
-}
-
-/**
- * Break-of-structure entry price.
- *
- * For BULL: walks pivot highs from most-recent to oldest and returns the first
- * one that the current close has already exceeded — i.e. the swing high whose
- * break confirmed the bullish BOS.
- *
- * For BEAR: same logic with pivot lows — returns the most recently broken
- * swing low below which price has already traded.
- *
- * Falls back to the current close when no qualifying pivot exists (sparse
- * history or price has not yet cleared any identified swing level).
- */
-function bosEntry(
-  bars: Bar[],
-  direction: "BULL" | "BEAR",
-  currentClose: number,
-): number {
-  const { lows: pivLows, highs: pivHighs } = findSwingPivots(bars, 3);
-  if (direction === "BULL") {
-    // Scan from most-recent pivot high toward oldest; first one below close is the BOS level
-    for (let i = pivHighs.length - 1; i >= 0; i--) {
-      if (currentClose > pivHighs[i]) return pivHighs[i];
-    }
-  } else {
-    // Scan from most-recent pivot low toward oldest; first one above close is the BOS level
-    for (let i = pivLows.length - 1; i >= 0; i--) {
-      if (currentClose < pivLows[i]) return pivLows[i];
-    }
-  }
-  return currentClose; // fallback: no BOS level identified yet
-}
-
-function tradeLevels(
-  symbol: string,
-  entry: number,
-  atr: number,
-  direction: "BULL" | "BEAR",
-  bars: Bar[],
-): TradeSetup {
-  const recent = bars.slice(-12);
-  const swingLow = Math.min(...recent.map((bar) => bar.low));
-  const swingHigh = Math.max(...recent.map((bar) => bar.high));
-  const atrBuffer = atr * 1.5;
-  const pointValue = MULTIPLIERS[symbol] ?? 1;
-  const stopLoss =
-    direction === "BULL"
-      ? Math.min(swingLow, entry - atrBuffer)
-      : Math.max(swingHigh, entry + atrBuffer);
-  const riskPts = Math.abs(entry - stopLoss);
-  const tp1 = direction === "BULL" ? entry + riskPts * 1.5 : entry - riskPts * 1.5;
-  const tp2 = direction === "BULL" ? entry + riskPts * 2 : entry - riskPts * 2;
-  return {
-    entry: Number(entry.toFixed(2)),
-    stopLoss: Number(stopLoss.toFixed(2)),
-    riskPts: Number(riskPts.toFixed(2)),
-    riskDollarsPerContract: Number((riskPts * pointValue).toFixed(2)),
-    tp1: Number(tp1.toFixed(2)),
-    tp2: Number(tp2.toFixed(2)),
   };
 }
 
@@ -625,11 +560,14 @@ function tradeLevels(
  * Forming after the 4:15 PM ET close, fixed reference during RTH, resets at
  * each 9:30 AM ET open. Nulls when no overnight bars exist.
  */
-function computeOvernightHL(bars: Bar[]): { onHigh: number | null; onLow: number | null } {
-  return overnightHLFromBars(bars, overnightWindow(Date.now()));
+function computeOvernightHL(
+  bars: Bar[],
+  now: number,
+): { onHigh: number | null; onLow: number | null } {
+  return overnightHLFromBars(bars, overnightWindow(now));
 }
 
-export function evaluateSymbol(symbol: string): MarketState | null {
+export function evaluateSymbol(symbol: string, now: number = Date.now()): MarketState | null {
   const bars = buffers.get(symbol) ?? [];
   if (bars.length < 20) return null;
   const oneMinute = aggregate(bars, 1);
@@ -639,33 +577,46 @@ export function evaluateSymbol(symbol: string): MarketState | null {
   const timeframeBars = { "1m": oneMinute, "5m": fiveMinute, "15m": fifteenMinute };
   const states = Object.fromEntries(
     Object.entries(timeframeBars)
-      .map(([timeframe, timeframeData]) => [timeframe, timeframeState(timeframeData)])
+      .map(([timeframe, timeframeData]) => [timeframe, timeframeState(timeframeData, now)])
       .filter((entry): entry is [string, TimeframeState] => entry[1] !== null),
   );
   const latest = bars[bars.length - 1];
 
-  // Compute trade levels for every directional timeframe using its own ATR and bars.
-  // NEUTRAL timeframes carry no directional setup.
+  // Compute trade levels from confirmed VWAP reversions on every timeframe.
+  // Directional bias and relative-volume gates intentionally do not apply to
+  // this mean-reversion strategy.
   const perTimeframeSetup: Record<string, TradeSetup> = {};
-  for (const [tfName, tfState] of Object.entries(states)) {
-    if (tfState.direction === "NEUTRAL") continue;
+  for (const tfName of Object.keys(states)) {
     const tfBars = timeframeBars[tfName as keyof typeof timeframeBars];
     if (tfBars) {
-      const entry = bosEntry(tfBars, tfState.direction, latest.close);
-      perTimeframeSetup[tfName] = tradeLevels(
-        symbol,
-        entry,
-        tfState.atr,
-        tfState.direction,
-        tfBars,
-      );
+      const reversion = analyzeVwapReversion(tfBars, now);
+      if (
+        reversion.signal &&
+        reversion.entry !== null &&
+        reversion.stop !== null &&
+        reversion.target1 !== null &&
+        reversion.target2 !== null &&
+        reversion.riskPts !== null
+      ) {
+        const pointValue = MULTIPLIERS[symbol] ?? 1;
+        perTimeframeSetup[tfName] = {
+          strategy: "VWAP_REVERSION",
+          direction: reversion.signal,
+          entry: reversion.entry,
+          stopLoss: reversion.stop,
+          riskPts: reversion.riskPts,
+          riskDollarsPerContract: Number((reversion.riskPts * pointValue).toFixed(2)),
+          tp1: reversion.target1,
+          tp2: reversion.target2,
+        };
+      }
     }
   }
 
   return {
     symbol: DISPLAY_NAMES[symbol] ?? symbol,
     lastPrice: Number(latest.close.toFixed(2)),
-    ...computeOvernightHL(bars),
+    ...computeOvernightHL(bars, now),
     perTimeframeSetup,
     timeframes: states,
   };

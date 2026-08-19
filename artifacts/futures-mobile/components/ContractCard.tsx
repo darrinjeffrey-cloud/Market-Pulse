@@ -80,14 +80,18 @@ function getBestTimeframe(timeframes: Record<string, TimeframeState>): string | 
   return bestTf;
 }
 
-function getBestSetup(market: MarketState): TradeSetup | null {
+type SelectedSetup = {
+  timeframe: (typeof TIMEFRAMES)[number];
+  setup: TradeSetup;
+};
+
+function getBestSetup(market: MarketState): SelectedSetup | null {
   if (!market.perTimeframeSetup) return null;
-  return (
-    market.perTimeframeSetup['15m'] ??
-    market.perTimeframeSetup['5m'] ??
-    market.perTimeframeSetup['1m'] ??
-    null
-  );
+  for (const timeframe of ['15m', '5m', '1m'] as const) {
+    const setup = market.perTimeframeSetup[timeframe];
+    if (setup) return { timeframe, setup };
+  }
+  return null;
 }
 
 function fmtPrice(n: number): string {
@@ -235,6 +239,7 @@ const chipStyles = StyleSheet.create({
 
 interface TradeLevelGridProps {
   setup: TradeSetup;
+  timeframe: string;
   mutedFg: string;
   foreground: string;
   secondary: string;
@@ -245,6 +250,7 @@ interface TradeLevelGridProps {
 
 function TradeLevelGrid({
   setup,
+  timeframe,
   mutedFg,
   foreground,
   secondary,
@@ -253,43 +259,76 @@ function TradeLevelGrid({
   destructiveColor,
 }: TradeLevelGridProps) {
   const cells = [
-    { label: 'ENTRY', value: fmtPrice(setup.entry), color: foreground },
-    { label: 'STOP', value: fmtPrice(setup.stopLoss), color: destructiveColor },
-    { label: 'TP1', value: fmtPrice(setup.tp1), color: successColor },
-    { label: 'TP2', value: fmtPrice(setup.tp2), color: successColor },
+    { label: 'ENTRY · REVERSAL', value: fmtPrice(setup.entry), color: foreground },
+    { label: 'STOP · ±2σ', value: fmtPrice(setup.stopLoss), color: destructiveColor },
+    { label: 'T1 · VWAP', value: fmtPrice(setup.tp1), color: successColor },
+    { label: 'T2 · OPP ±1σ', value: fmtPrice(setup.tp2), color: successColor },
   ] as const;
 
   return (
-    <View style={[gridStyles.container, { backgroundColor: secondary, borderColor: border }]}>
-      {cells.map((cell, idx) => (
-        <View
-          key={cell.label}
+    <View style={gridStyles.wrap}>
+      <View style={gridStyles.titleRow}>
+        <Ionicons
+          name={setup.direction === 'LONG' ? 'arrow-up' : 'arrow-down'}
+          size={12}
+          color={setup.direction === 'LONG' ? successColor : destructiveColor}
+        />
+        <Text
           style={[
-            gridStyles.cell,
-            idx % 2 === 0
-              ? { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: border }
-              : {},
-            idx < 2
-              ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }
-              : {},
+            gridStyles.title,
+            { color: setup.direction === 'LONG' ? successColor : destructiveColor },
           ]}
         >
-          <Text style={[gridStyles.cellLabel, { color: mutedFg }]}>{cell.label}</Text>
-          <Text style={[gridStyles.cellValue, { color: cell.color }]}>{cell.value}</Text>
-        </View>
-      ))}
+          VWAP REVERSION · {setup.direction} · {timeframe}
+        </Text>
+      </View>
+      <View style={[gridStyles.container, { backgroundColor: secondary, borderColor: border }]}>
+        {cells.map((cell, idx) => (
+          <View
+            key={cell.label}
+            style={[
+              gridStyles.cell,
+              idx % 2 === 0
+                ? { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: border }
+                : {},
+              idx < 2
+                ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }
+                : {},
+            ]}
+          >
+            <Text style={[gridStyles.cellLabel, { color: mutedFg }]}>{cell.label}</Text>
+            <Text style={[gridStyles.cellValue, { color: cell.color }]}>{cell.value}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={[gridStyles.risk, { color: mutedFg }]}>
+        Risk {fmtPrice(setup.riskPts)} pts · ${fmtPrice(setup.riskDollarsPerContract)} / contract
+      </Text>
     </View>
   );
 }
 
 const gridStyles = StyleSheet.create({
+  wrap: {
+    marginTop: 12,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  title: {
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.7,
+  },
   container: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     borderRadius: 8,
     borderWidth: 1,
     overflow: 'hidden',
-    marginTop: 12,
   },
   cell: {
     width: '50%',
@@ -306,6 +345,11 @@ const gridStyles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
     letterSpacing: -0.3,
+  },
+  risk: {
+    marginTop: 5,
+    fontSize: 9,
+    fontFamily: 'Inter_500Medium',
   },
 });
 
@@ -328,7 +372,8 @@ function ContractCard({ market, marketClosed = false }: ContractCardProps) {
 
   const direction = computeOverallDirection(market.timeframes);
   const confidence = computeConfidence(market.timeframes, direction);
-  const setup = getBestSetup(market);
+  const selectedSetup = getBestSetup(market);
+  const setup = selectedSetup?.setup ?? null;
   // Strip roll suffix (e.g. "ES.c.0" → "ES", "NQ.v.0" → "NQ")
   const baseSymbol = market.symbol.split('.')[0] ?? market.symbol;
   const symbolLabel = SYMBOL_LABELS[baseSymbol] ?? 'Futures Contract';
@@ -367,6 +412,9 @@ function ContractCard({ market, marketClosed = false }: ContractCardProps) {
   const rawConfidencePct = Math.round(Math.min(Math.max(confidence, 0), 100));
   const confidencePct = marketClosed ? 0 : rawConfidencePct;
   const drivingTf = marketClosed ? null : getBestTimeframe(market.timeframes);
+  const isVwapWatching = tfStates.some(
+    (tf) => tf.vwapReversionStatus === 'watching',
+  );
 
   return (
     <View
@@ -570,9 +618,10 @@ function ContractCard({ market, marketClosed = false }: ContractCardProps) {
       )}
 
       {/* ── Trade setup (best available timeframe) ── */}
-      {setup != null && !marketClosed && (
+      {setup != null && selectedSetup != null && !marketClosed ? (
         <TradeLevelGrid
           setup={setup}
+          timeframe={selectedSetup.timeframe}
           mutedFg={colors.mutedForeground}
           foreground={colors.foreground}
           secondary={colors.secondary}
@@ -580,7 +629,30 @@ function ContractCard({ market, marketClosed = false }: ContractCardProps) {
           successColor={colors.success}
           destructiveColor={colors.destructive}
         />
-      )}
+      ) : !marketClosed ? (
+        <View
+          style={[
+            cardStyles.vwapWatch,
+            { backgroundColor: colors.muted, borderColor: colors.border },
+          ]}
+        >
+          <View style={cardStyles.vwapWatchTitleRow}>
+            <Ionicons
+              name={isVwapWatching ? 'analytics-outline' : 'time-outline'}
+              size={12}
+              color={colors.mutedForeground}
+            />
+            <Text style={[cardStyles.vwapWatchTitle, { color: colors.mutedForeground }]}>
+              VWAP REVERSION · {isVwapWatching ? 'WATCHING' : 'INACTIVE'}
+            </Text>
+          </View>
+          <Text style={[cardStyles.vwapWatchText, { color: colors.mutedForeground }]}>
+            {isVwapWatching
+              ? 'Waiting for a ±1σ extension and confirmed reversal'
+              : 'Entries are active during RTH · 09:30–16:00 ET'}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -730,6 +802,29 @@ const cardStyles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter_400Regular',
     letterSpacing: 0.2,
+  },
+  vwapWatch: {
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  vwapWatchTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 3,
+  },
+  vwapWatchTitle: {
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.7,
+  },
+  vwapWatchText: {
+    fontSize: 10,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 14,
   },
 });
 

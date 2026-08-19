@@ -5,8 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TradeSetupDirection } from './tradeSetupDirection';
+import type { TradeSetupStrategy } from './tradeSetupStrategy';
 
 export interface TradeSetup {
+  strategy: TradeSetupStrategy;
+  direction: TradeSetupDirection;
   entry: number;
   stopLoss: number;
   riskPts: number;

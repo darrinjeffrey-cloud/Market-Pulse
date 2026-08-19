@@ -10,6 +10,7 @@
 
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { GetMarketSnapshotResponse } from "@workspace/api-zod";
 
 import {
   determineDirectionalBias,
@@ -93,6 +94,29 @@ function buildBarsMinute(
     });
   }
   return bars;
+}
+
+function buildRthReversionBars(
+  direction: "LONG" | "SHORT",
+): { bars: Bar[]; now: number } {
+  const rthOpen = Date.UTC(2026, 6, 15, 13, 30); // 9:30 AM EDT
+  const bars: Bar[] = [];
+
+  for (let i = 0; i < 300; i++) {
+    let price = i % 2 === 0 ? 98 : 102;
+    if (i === 298) price = direction === "LONG" ? 96 : 104;
+    if (i === 299) price = direction === "LONG" ? 97 : 103;
+    bars.push({
+      ts: rthOpen + i * 60_000,
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      volume: 1000,
+    });
+  }
+
+  return { bars, now: bars[bars.length - 1]!.ts };
 }
 
 /** Seed a symbol buffer with pre-built bars, bypassing storeBar validation. */
@@ -229,20 +253,58 @@ describe("evaluateSymbol", () => {
     assert.equal(result.lastPrice, 154.0);
   });
 
-  it("populates perTimeframeSetup only for non-NEUTRAL timeframes", () => {
-    // Flat prices → all NEUTRAL → no trade setups.
+  it("does not publish a VWAP setup when no ±1σ reversal is confirmed", () => {
     seedBuffer(TEST_SYMBOL, buildBars(100, 0, 55));
     const result = evaluateSymbol(TEST_SYMBOL);
     assert.ok(result !== null);
     assert.equal(Object.keys(result.perTimeframeSetup).length, 0);
   });
 
-  it("populates perTimeframeSetup for all 3 timeframes when all are BULL", () => {
+  it("does not convert a directional trend into a VWAP reversion setup", () => {
     seedBuffer(TEST_SYMBOL, buildBars(100, 1, 55));
     const result = evaluateSymbol(TEST_SYMBOL);
     assert.ok(result !== null);
-    const tfKeys = Object.keys(result.perTimeframeSetup).sort();
-    assert.deepEqual(tfKeys, ["15m", "1m", "5m"]);
+    assert.equal(Object.keys(result.perTimeframeSetup).length, 0);
+  });
+
+  it("publishes a confirmed 1m VWAP long even without a volume spike", () => {
+    const { bars, now } = buildRthReversionBars("LONG");
+    seedBuffer(TEST_SYMBOL, bars);
+    const result = evaluateSymbol(TEST_SYMBOL, now);
+    assert.ok(result !== null);
+
+    const setup = result.perTimeframeSetup["1m"];
+    assert.ok(setup !== undefined, "confirmed 1m reversion must publish levels");
+    assert.equal(setup.strategy, "VWAP_REVERSION");
+    assert.equal(setup.direction, "LONG");
+    assert.ok(setup.stopLoss < setup.entry);
+    assert.ok(setup.entry < setup.tp1);
+    assert.ok(setup.tp1 < setup.tp2);
+    assert.equal(setup.riskPts, Number((setup.entry - setup.stopLoss).toFixed(2)));
+    assert.equal(result.timeframes["1m"]!.volSpike, false);
+  });
+
+  it("preserves VWAP setup metadata through the API response validator", () => {
+    const { bars, now } = buildRthReversionBars("SHORT");
+    seedBuffer(TEST_SYMBOL, bars);
+    const result = evaluateSymbol(TEST_SYMBOL, now);
+    assert.ok(result !== null);
+
+    const parsed = GetMarketSnapshotResponse.parse({
+      timestamp: new Date(now).toISOString(),
+      source: "databento",
+      isLiveConnected: true,
+      markets: { [TEST_SYMBOL]: result },
+      message: null,
+    });
+
+    const setup = parsed.markets[TEST_SYMBOL]!.perTimeframeSetup?.["1m"];
+    assert.equal(setup?.strategy, "VWAP_REVERSION");
+    assert.equal(setup?.direction, "SHORT");
+    assert.equal(
+      parsed.markets[TEST_SYMBOL]!.timeframes["1m"]!.vwapReversionStatus,
+      "short_setup",
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -314,14 +376,12 @@ describe("computeVWAP deviation bands", () => {
     return { ts, open: price, high: price, low: price, close: price, volume };
   }
 
-  // Recent timestamps so bars fall into either the "today UTC" window or the
-  // last-60-bars fallback — both select the same set for these small arrays.
-  const now = Date.now();
+  const now = Date.UTC(2026, 6, 15, 15, 0); // 11:00 AM EDT
 
   it("computes VWAP, ±1σ and ±2σ for equal-volume bars", () => {
     // tp = 100 and 104, equal volume → vwap 102, variance 4, σ = 2
     const bars = [flatBar(now - 120_000, 100, 1), flatBar(now - 60_000, 104, 1)];
-    const r = computeVWAP(bars);
+    const r = computeVWAP(bars, now);
     assert.equal(r.vwap, 102);
     assert.equal(r.vwapStd1Up, 104);
     assert.equal(r.vwapStd1Down, 100);
@@ -332,7 +392,7 @@ describe("computeVWAP deviation bands", () => {
   it("weights variance by volume", () => {
     // tp 100 @ vol 3, tp 110 @ vol 1 → vwap 102.5, var 18.75, σ ≈ 4.3301
     const bars = [flatBar(now - 120_000, 100, 3), flatBar(now - 60_000, 110, 1)];
-    const r = computeVWAP(bars);
+    const r = computeVWAP(bars, now);
     assert.equal(r.vwap, 102.5);
     assert.equal(r.vwapStd1Up, 106.83);
     assert.equal(r.vwapStd1Down, 98.17);
@@ -342,7 +402,7 @@ describe("computeVWAP deviation bands", () => {
 
   it("zero-variance session collapses all bands onto VWAP", () => {
     const bars = [flatBar(now - 120_000, 5000, 2), flatBar(now - 60_000, 5000, 7)];
-    const r = computeVWAP(bars);
+    const r = computeVWAP(bars, now);
     assert.equal(r.vwap, 5000);
     assert.equal(r.vwapStd1Up, 5000);
     assert.equal(r.vwapStd1Down, 5000);

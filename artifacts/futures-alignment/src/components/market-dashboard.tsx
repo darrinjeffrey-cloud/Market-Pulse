@@ -48,6 +48,7 @@ import type {
   MarketSnapshot,
   MarketState,
   TimeframeState,
+  TradeSetup,
 } from '@workspace/api-client-react';
 
 type StreamState = 'connecting' | 'live' | 'disconnected';
@@ -158,16 +159,7 @@ function Metric({
 // Per-timeframe tab UI
 // ---------------------------------------------------------------------------
 
-// Local extension — perTimeframeSetup added server-side, not yet in generated client types
-type TfSetup = {
-  entry: number;
-  stopLoss: number;
-  riskPts: number;
-  riskDollarsPerContract: number;
-  tp1: number;
-  tp2: number;
-};
-type ExtMarket = MarketState & { perTimeframeSetup?: Record<string, TfSetup> };
+type TfSetup = TradeSetup;
 
 const TF_ORDER = ['1m', '5m', '15m'] as const;
 type Tf = (typeof TF_ORDER)[number];
@@ -406,6 +398,11 @@ function TimeframePanel({
     : 'text-muted-foreground';
 
   const isRTH = (timeframe as unknown as {isRTH?: boolean}).isRTH;
+  const reversionStatus = (
+    timeframe as unknown as {
+      vwapReversionStatus?: 'inactive' | 'watching' | 'long_setup' | 'short_setup' | 'expired';
+    }
+  ).vwapReversionStatus;
 
   const closed = marketClosed;
 
@@ -508,7 +505,7 @@ function TimeframePanel({
         </div>
       )}
 
-      {/* Trade levels — suppressed when market closed, ranging, or no volume conviction */}
+      {/* Trade levels — published only after a confirmed VWAP reversion */}
       <div>
         <div className="mb-2.5 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[.16em] text-muted-foreground">
           <Gauge className="h-3 w-3 text-[hsl(var(--accent))]" />
@@ -524,42 +521,51 @@ function TimeframePanel({
               No active session — signals resume when trading reopens
             </div>
           </div>
-        ) : neutral ? (
-          <div className="flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border/70 bg-muted/20 px-4 text-center">
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.12em] text-muted-foreground">
-              <CircleDashed className="h-3.5 w-3.5" />
-              No Trade
-            </div>
-            <div className="text-[10px] text-muted-foreground/70">
-              Market is ranging — no directional setup on this timeframe
-            </div>
-          </div>
-        ) : !timeframe.volSpike ? (
-          <div className="flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border/70 bg-muted/20 px-4 text-center">
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.12em] text-muted-foreground">
-              <CircleDashed className="h-3.5 w-3.5" />
-              No Trade
-            </div>
-            <div className="text-[10px] text-muted-foreground/70">
-              RVOL {timeframe.rvol.toFixed(2)}× — no volume conviction on this timeframe
-            </div>
-          </div>
         ) : setup ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-[hsl(var(--primary)/.24)] bg-[hsl(var(--primary)/.045)] p-3">
-            <Metric label="Entry" value={formatPrice(setup.entry)} tone="lime" />
-            <Metric label="Stop loss" value={formatPrice(setup.stopLoss)} tone="coral" />
+            <div className={`col-span-2 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider ${
+              setup.direction === 'LONG'
+                ? 'text-[hsl(var(--chart-4))]'
+                : 'text-[hsl(var(--destructive))]'
+            }`}>
+              {setup.direction === 'LONG'
+                ? <ArrowUpRight className="h-3 w-3" />
+                : <ArrowDownRight className="h-3 w-3" />}
+              VWAP reversion {setup.direction.toLowerCase()}
+            </div>
+            <Metric
+              label="Entry · reversal close"
+              value={formatPrice(setup.entry)}
+              tone={setup.direction === 'LONG' ? 'lime' : 'coral'}
+            />
+            <Metric label="Stop loss · ±2σ" value={formatPrice(setup.stopLoss)} tone="coral" />
             <Metric label="Risk points" value={formatPrice(setup.riskPts)} />
             <Metric label="Risk / contract" value={`$${formatPrice(setup.riskDollarsPerContract)}`} />
-            <Metric label="Target 1 · 1.5R" value={formatPrice(setup.tp1)} tone="cyan" />
-            <Metric label="Target 2 · 2.0R" value={formatPrice(setup.tp2)} tone="cyan" />
+            <Metric label="Target 1 · VWAP" value={formatPrice(setup.tp1)} tone="cyan" />
+            <Metric label="Target 2 · Opposite ±1σ" value={formatPrice(setup.tp2)} tone="cyan" />
             <div className="col-span-2 flex items-center gap-1.5 pt-1 text-[9px] font-bold uppercase tracking-wider text-[hsl(var(--primary))]">
-              <Zap className="h-2.5 w-2.5" /> Volume spike confirmed
+              <Zap className="h-2.5 w-2.5" /> ±1σ extension + reversal confirmed · no RVOL gate
+            </div>
+          </div>
+        ) : reversionStatus === 'inactive' || reversionStatus === 'expired' || isRTH === false ? (
+          <div className="flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border/70 bg-muted/20 px-4 text-center">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.12em] text-muted-foreground">
+              <Clock3 className="h-3.5 w-3.5" />
+              No VWAP Setup
+            </div>
+            <div className="text-[10px] text-muted-foreground/70">
+              VWAP reversion entries are active during RTH · 09:30–16:00 ET
             </div>
           </div>
         ) : (
-          <div className="flex min-h-[80px] items-center gap-3 rounded-md border border-dashed border-border bg-background/35 px-4">
-            <CircleDashed className="h-4 w-4 text-muted-foreground" />
-            <div className="text-[10px] text-muted-foreground">No data for this timeframe yet.</div>
+          <div className="flex min-h-[96px] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border/70 bg-muted/20 px-4 text-center">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.12em] text-muted-foreground">
+              <CircleDashed className="h-3.5 w-3.5" />
+              VWAP Watching
+            </div>
+            <div className="text-[10px] text-muted-foreground/70">
+              Waiting for a ±1σ extension and confirmed reversal on this timeframe
+            </div>
           </div>
         )}
       </div>
@@ -574,7 +580,7 @@ function MarketCard({
   market: MarketState;
   index: number;
 }) {
-  const ext = market as ExtMarket;
+  const ext = market;
   const storageKey = `fam-tf-${market.symbol}`;
   // Lazy-init: restore from localStorage, fall back to first tab with data
   const [activeTab, setActiveTabRaw] = useState<Tf>(() => {

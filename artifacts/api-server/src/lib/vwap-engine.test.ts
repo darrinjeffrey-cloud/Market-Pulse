@@ -4,6 +4,7 @@ import { beforeEach, describe, it } from "node:test";
 import { buffers } from "./market-engine.js";
 import type { Bar } from "./market-engine.js";
 import { computeVwapSeriesSnapshot } from "./vwap-engine.js";
+import { analyzeVwapReversion } from "./vwap-reversion.js";
 
 const SYMBOL = "ES.v.0"; // in the default watchlist
 
@@ -25,8 +26,104 @@ function seedBars(startMs: number, n: number, base = 5000): Bar[] {
   return out;
 }
 
+function reversionBars(
+  startMs: number,
+  direction: "LONG" | "SHORT" | "NONE" | "BEYOND_STOP",
+): Bar[] {
+  const prices: number[] = Array.from(
+    { length: 20 },
+    (_, i) => (i % 2 === 0 ? 98 : 102),
+  );
+  if (direction === "LONG") prices.push(96, 97);
+  if (direction === "SHORT") prices.push(104, 103);
+  if (direction === "NONE") prices.push(99, 100);
+  if (direction === "BEYOND_STOP") prices.push(90, 91);
+
+  return prices.map((price, index) => ({
+    ts: startMs + index * 60_000,
+    open: price,
+    high: price,
+    low: price,
+    close: price,
+    volume: 1000,
+  }));
+}
+
 beforeEach(() => {
   buffers.set(SYMBOL, []);
+});
+
+describe("analyzeVwapReversion — confirmed trade levels", () => {
+  const edtOpen = Date.UTC(2026, 6, 15, 13, 30); // 9:30 AM EDT
+  const activeNow = Date.UTC(2026, 6, 15, 14, 30);
+
+  it("creates a long between −1σ entry and −2σ stop", () => {
+    const result = analyzeVwapReversion(reversionBars(edtOpen, "LONG"), activeNow);
+    assert.equal(result.status, "long_setup");
+    assert.equal(result.signal, "LONG");
+    assert.ok(result.stop !== null && result.entry !== null);
+    assert.ok(result.target1 !== null && result.target2 !== null);
+    assert.ok(result.stop < result.entry);
+    assert.ok(result.entry < result.target1);
+    assert.ok(result.target1 < result.target2);
+    assert.equal(result.riskPts, Number((result.entry - result.stop).toFixed(2)));
+  });
+
+  it("creates a short between +1σ entry and +2σ stop", () => {
+    const result = analyzeVwapReversion(reversionBars(edtOpen, "SHORT"), activeNow);
+    assert.equal(result.status, "short_setup");
+    assert.equal(result.signal, "SHORT");
+    assert.ok(result.stop !== null && result.entry !== null);
+    assert.ok(result.target1 !== null && result.target2 !== null);
+    assert.ok(result.stop > result.entry);
+    assert.ok(result.entry > result.target1);
+    assert.ok(result.target1 > result.target2);
+    assert.equal(result.riskPts, Number((result.stop - result.entry).toFixed(2)));
+  });
+
+  it("stays watching while price remains inside ±1σ", () => {
+    const result = analyzeVwapReversion(reversionBars(edtOpen, "NONE"), activeNow);
+    assert.equal(result.status, "watching");
+    assert.equal(result.signal, null);
+    assert.equal(result.entry, null);
+  });
+
+  it("does not publish a setup after price has crossed the ±2σ stop", () => {
+    const result = analyzeVwapReversion(reversionBars(edtOpen, "BEYOND_STOP"), activeNow);
+    assert.equal(result.status, "watching");
+    assert.equal(result.signal, null);
+    assert.equal(result.stop, null);
+  });
+
+  it("is inactive before the EDT open and expired after the close", () => {
+    const bars = reversionBars(edtOpen, "LONG");
+    assert.equal(
+      analyzeVwapReversion(bars, Date.UTC(2026, 6, 15, 13, 29)).status,
+      "inactive",
+    );
+    assert.equal(
+      analyzeVwapReversion(bars, Date.UTC(2026, 6, 15, 20, 0)).status,
+      "expired",
+    );
+  });
+
+  it("remains active at 3:30 PM during EST", () => {
+    const estOpen = Date.UTC(2026, 0, 15, 14, 30); // 9:30 AM EST
+    const result = analyzeVwapReversion(
+      reversionBars(estOpen, "LONG"),
+      Date.UTC(2026, 0, 15, 20, 30), // 3:30 PM EST
+    );
+    assert.equal(result.status, "long_setup");
+  });
+
+  it("never activates during the weekend", () => {
+    const saturdayOpenEquivalent = Date.UTC(2026, 6, 18, 13, 30);
+    const result = analyzeVwapReversion(
+      reversionBars(saturdayOpenEquivalent, "LONG"),
+      Date.UTC(2026, 6, 18, 14, 30),
+    );
+    assert.equal(result.status, "inactive");
+  });
 });
 
 describe("computeVwapSeriesSnapshot — EDT (July 15, 2026, UTC−4)", () => {
