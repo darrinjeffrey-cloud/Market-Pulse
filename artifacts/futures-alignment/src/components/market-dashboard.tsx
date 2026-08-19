@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { OrbPanel } from './OrbPanel';
 import { VwapPanel } from './VwapPanel';
 import { IctPanel } from './IctPanel';
 import {
@@ -1619,9 +1618,6 @@ export function MarketDashboard() {
             )}
           </section>
         )}
-
-        {/* ORB scalping panel — shown whenever market data is available */}
-        {snapshot && <OrbPanel snapshotTimestamp={snapshot.timestamp} />}
 
         {/* VWAP reversion panel — all-session scalping */}
         {snapshot && <VwapPanel snapshotTimestamp={snapshot.timestamp} />}

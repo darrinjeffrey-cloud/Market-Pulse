@@ -296,7 +296,7 @@ components:
           description: "RSI-14 0–100: >50 bullish momentum, <50 bearish"
         vwap:
           type: number
-          description: "VWAP anchored to the current America/New_York RTH session"
+          description: "VWAP anchored to the current America/New_York Globex session"
         vwapStd1Up:
           type: number
           description: "VWAP + 1 volume-weighted standard deviation"

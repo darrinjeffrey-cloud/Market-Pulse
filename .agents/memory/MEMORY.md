@@ -1,3 +1,4 @@
 - [Auth system](auth-system.md) — Password gate (ADMIN_PASSWORD secret) replaced Replit OIDC; sessions stored in Postgres.
 - [Session time boundaries](session-time-boundaries.md) — compute CME session windows in ET with DST via the shared session-bounds module, never fixed UTC constants.
 - [Expo web API origin](expo-web-api-origin.md) — Expo browser previews need same-origin API calls for cookie auth; native builds still use Bearer tokens.
+- [Globex VWAP session](globex-vwap-session.md) — VWAP reversion follows the full CME equity-index Globex session, resetting at 6:00 PM ET.

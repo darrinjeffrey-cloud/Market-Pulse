@@ -54,11 +54,11 @@ beforeEach(() => {
 });
 
 describe("analyzeVwapReversion — confirmed trade levels", () => {
-  const edtOpen = Date.UTC(2026, 6, 15, 13, 30); // 9:30 AM EDT
-  const activeNow = Date.UTC(2026, 6, 15, 14, 30);
+  const globexOpen = Date.UTC(2026, 6, 14, 22, 0); // Tuesday 6:00 PM EDT
+  const activeNow = Date.UTC(2026, 6, 14, 22, 30);
 
   it("creates a long between −1σ entry and −2σ stop", () => {
-    const result = analyzeVwapReversion(reversionBars(edtOpen, "LONG"), activeNow);
+    const result = analyzeVwapReversion(reversionBars(globexOpen, "LONG"), activeNow);
     assert.equal(result.status, "long_setup");
     assert.equal(result.signal, "LONG");
     assert.ok(result.stop !== null && result.entry !== null);
@@ -70,7 +70,7 @@ describe("analyzeVwapReversion — confirmed trade levels", () => {
   });
 
   it("creates a short between +1σ entry and +2σ stop", () => {
-    const result = analyzeVwapReversion(reversionBars(edtOpen, "SHORT"), activeNow);
+    const result = analyzeVwapReversion(reversionBars(globexOpen, "SHORT"), activeNow);
     assert.equal(result.status, "short_setup");
     assert.equal(result.signal, "SHORT");
     assert.ok(result.stop !== null && result.entry !== null);
@@ -82,33 +82,33 @@ describe("analyzeVwapReversion — confirmed trade levels", () => {
   });
 
   it("stays watching while price remains inside ±1σ", () => {
-    const result = analyzeVwapReversion(reversionBars(edtOpen, "NONE"), activeNow);
+    const result = analyzeVwapReversion(reversionBars(globexOpen, "NONE"), activeNow);
     assert.equal(result.status, "watching");
     assert.equal(result.signal, null);
     assert.equal(result.entry, null);
   });
 
   it("does not publish a setup after price has crossed the ±2σ stop", () => {
-    const result = analyzeVwapReversion(reversionBars(edtOpen, "BEYOND_STOP"), activeNow);
+    const result = analyzeVwapReversion(reversionBars(globexOpen, "BEYOND_STOP"), activeNow);
     assert.equal(result.status, "watching");
     assert.equal(result.signal, null);
     assert.equal(result.stop, null);
   });
 
-  it("is inactive before the EDT open and expired after the close", () => {
-    const bars = reversionBars(edtOpen, "LONG");
+  it("pauses for daily maintenance and expires after Friday's close", () => {
+    const bars = reversionBars(globexOpen, "LONG");
     assert.equal(
-      analyzeVwapReversion(bars, Date.UTC(2026, 6, 15, 13, 29)).status,
+      analyzeVwapReversion(bars, Date.UTC(2026, 6, 15, 21, 30)).status, // 5:30 PM EDT
       "inactive",
     );
     assert.equal(
-      analyzeVwapReversion(bars, Date.UTC(2026, 6, 15, 20, 0)).status,
+      analyzeVwapReversion(bars, Date.UTC(2026, 6, 17, 21, 0)).status, // Friday 5:00 PM EDT
       "expired",
     );
   });
 
-  it("remains active at 3:30 PM during EST", () => {
-    const estOpen = Date.UTC(2026, 0, 15, 14, 30); // 9:30 AM EST
+  it("remains active through RTH during EST", () => {
+    const estOpen = Date.UTC(2026, 0, 14, 23, 0); // Wednesday 6:00 PM EST
     const result = analyzeVwapReversion(
       reversionBars(estOpen, "LONG"),
       Date.UTC(2026, 0, 15, 20, 30), // 3:30 PM EST
@@ -116,31 +116,37 @@ describe("analyzeVwapReversion — confirmed trade levels", () => {
     assert.equal(result.status, "long_setup");
   });
 
-  it("never activates during the weekend", () => {
-    const saturdayOpenEquivalent = Date.UTC(2026, 6, 18, 13, 30);
+  it("never activates during the weekend and restarts Sunday at 6 PM ET", () => {
+    const saturdayOpenEquivalent = Date.UTC(2026, 6, 18, 22, 0);
     const result = analyzeVwapReversion(
       reversionBars(saturdayOpenEquivalent, "LONG"),
-      Date.UTC(2026, 6, 18, 14, 30),
+      Date.UTC(2026, 6, 18, 22, 30),
     );
-    assert.equal(result.status, "inactive");
+    assert.equal(result.status, "expired");
+
+    const sundayOpen = Date.UTC(2026, 6, 19, 22, 0);
+    assert.equal(
+      analyzeVwapReversion(reversionBars(sundayOpen, "LONG"), sundayOpen + 30 * 60_000).status,
+      "long_setup",
+    );
   });
 });
 
 describe("computeVwapSeriesSnapshot — EDT (July 15, 2026, UTC−4)", () => {
-  // 9:30 AM ET = 13:30 UTC; 4:00 PM ET = 20:00 UTC
-  const rthOpen = Date.UTC(2026, 6, 15, 13, 30);
+  // Tuesday 6:00 PM ET = Wednesday 22:00 UTC
+  const globexOpen = Date.UTC(2026, 6, 14, 22, 0);
 
   it("returns empty points with no data", () => {
-    const snap = computeVwapSeriesSnapshot(rthOpen + 60 * 60_000);
+    const snap = computeVwapSeriesSnapshot(globexOpen + 60 * 60_000);
     const es = snap.markets[SYMBOL]!;
     assert.equal(es.points.length, 0);
     assert.equal(es.overnightHigh, null);
     assert.equal(es.overnightLow, null);
   });
 
-  it("accumulates one point per RTH bar with ordered bands", () => {
-    buffers.set(SYMBOL, seedBars(rthOpen, 30));
-    const snap = computeVwapSeriesSnapshot(rthOpen + 30 * 60_000);
+  it("accumulates one point per Globex bar with ordered bands", () => {
+    buffers.set(SYMBOL, seedBars(globexOpen, 30));
+    const snap = computeVwapSeriesSnapshot(globexOpen + 30 * 60_000);
     const es = snap.markets[SYMBOL]!;
     assert.equal(es.points.length, 30);
     const last = es.points[es.points.length - 1]!;
@@ -148,53 +154,52 @@ describe("computeVwapSeriesSnapshot — EDT (July 15, 2026, UTC−4)", () => {
     assert.ok(last.band1Upper > last.vwap);
     assert.ok(last.vwap > last.band1Lower);
     assert.ok(last.band1Lower > last.band2Lower);
-    // First point timestamp is the RTH open bar
-    assert.equal(es.points[0]!.timestamp, new Date(rthOpen).toISOString());
+    assert.equal(es.points[0]!.timestamp, new Date(globexOpen).toISOString());
   });
 
-  it("excludes pre-RTH (overnight) bars from the series but uses them for overnight H/L", () => {
-    // Overnight bars 4:15 PM ET prev day → 9:30 AM ET (here: last 2h before open)
-    const overnight = seedBars(rthOpen - 120 * 60_000, 120, 4950);
-    const rth = seedBars(rthOpen, 10);
-    buffers.set(SYMBOL, [...overnight, ...rth]);
-    const snap = computeVwapSeriesSnapshot(rthOpen + 10 * 60_000);
+  it("keeps the Globex series active throughout RTH", () => {
+    const rthNow = Date.UTC(2026, 6, 15, 14, 30); // 10:30 AM EDT
+    const evening = seedBars(globexOpen, 10, 4950);
+    const rth = seedBars(rthNow - 10 * 60_000, 10);
+    buffers.set(SYMBOL, [...evening, ...rth]);
+    const snap = computeVwapSeriesSnapshot(rthNow);
     const es = snap.markets[SYMBOL]!;
-    assert.equal(es.points.length, 10);
+    assert.equal(es.points.length, 20);
     assert.ok(es.overnightHigh != null && es.overnightLow != null);
     assert.ok(es.overnightHigh! > es.overnightLow!);
-    // Overnight levels come from the ~4950 overnight range, not the 5000 RTH range
     assert.ok(es.overnightHigh! < 4990);
   });
 
-  it("returns empty points outside RTH (before open and after 4:00 PM ET)", () => {
-    buffers.set(SYMBOL, seedBars(rthOpen, 30));
-    const before = computeVwapSeriesSnapshot(rthOpen - 60_000);
-    assert.equal(before.markets[SYMBOL]!.points.length, 0);
-    const after = computeVwapSeriesSnapshot(Date.UTC(2026, 6, 15, 20, 1));
-    assert.equal(after.markets[SYMBOL]!.points.length, 0);
+  it("returns empty points during maintenance and the weekend", () => {
+    buffers.set(SYMBOL, seedBars(globexOpen, 30));
+    const maintenance = computeVwapSeriesSnapshot(Date.UTC(2026, 6, 15, 21, 30));
+    assert.equal(maintenance.markets[SYMBOL]!.points.length, 0);
+    const weekend = computeVwapSeriesSnapshot(Date.UTC(2026, 6, 18, 14, 0));
+    assert.equal(weekend.markets[SYMBOL]!.points.length, 0);
   });
 });
 
 describe("computeVwapSeriesSnapshot — EST (January 15, 2026, UTC−5)", () => {
-  // 9:30 AM ET = 14:30 UTC; 4:00 PM ET = 21:00 UTC
-  const rthOpen = Date.UTC(2026, 0, 15, 14, 30);
+  const globexOpen = Date.UTC(2026, 0, 14, 23, 0); // 6:00 PM EST
 
-  it("is active right at the EST open (9:30 ET = 14:30 UTC)", () => {
-    buffers.set(SYMBOL, seedBars(rthOpen, 5));
-    const snap = computeVwapSeriesSnapshot(rthOpen + 5 * 60_000);
+  it("is active during RTH on an EST date", () => {
+    buffers.set(SYMBOL, seedBars(globexOpen, 5));
+    const snap = computeVwapSeriesSnapshot(Date.UTC(2026, 0, 15, 14, 30));
     assert.equal(snap.markets[SYMBOL]!.points.length, 5);
   });
 
-  it("stays active between 3:00 and 4:00 PM ET (would be dead under fixed-UTC math)", () => {
-    buffers.set(SYMBOL, seedBars(rthOpen, 6 * 60));
+  it("stays active at 3:30 PM ET (would be dead under fixed-UTC math)", () => {
+    buffers.set(SYMBOL, seedBars(globexOpen, 6 * 60));
     // 3:30 PM ET = 20:30 UTC — after the old hard-coded 20:00 UTC cutoff
     const snap = computeVwapSeriesSnapshot(Date.UTC(2026, 0, 15, 20, 30));
     assert.ok(snap.markets[SYMBOL]!.points.length > 0);
   });
 
-  it("ends at 4:00 PM ET (21:00 UTC)", () => {
-    buffers.set(SYMBOL, seedBars(rthOpen, 6 * 60));
-    const snap = computeVwapSeriesSnapshot(Date.UTC(2026, 0, 15, 21, 0));
+  it("stays active after RTH and pauses at the EST maintenance break", () => {
+    buffers.set(SYMBOL, seedBars(globexOpen, 6 * 60));
+    const afterRth = computeVwapSeriesSnapshot(Date.UTC(2026, 0, 15, 21, 0));
+    assert.ok(afterRth.markets[SYMBOL]!.points.length > 0);
+    const snap = computeVwapSeriesSnapshot(Date.UTC(2026, 0, 15, 22, 30));
     assert.equal(snap.markets[SYMBOL]!.points.length, 0);
   });
 });

@@ -1,6 +1,6 @@
 # Market Posture
 
-A live futures market dashboard that answers one question in real time: *Is the tape aligned?* — showing multi-timeframe volume, volatility, trend direction, and ORB/VWAP trade setups for ES, NQ, MES, and MNQ contracts.
+A live futures market dashboard that answers one question in real time: *Is the tape aligned?* — showing multi-timeframe volume, volatility, trend direction, and Globex VWAP-reversion trade setups for ES, NQ, MES, and MNQ contracts.
 
 ## Run & Operate
 
@@ -25,11 +25,9 @@ A live futures market dashboard that answers one question in real time: *Is the 
 
 - `artifacts/api-server/src/lib/market-engine.ts` — core market snapshot state + Databento polling
 - `artifacts/api-server/src/lib/databento-live.ts` — live TCP feed client (WebSocket/MBP)
-- `artifacts/api-server/src/lib/orb-engine.ts` — Opening Range Breakout signal computation
 - `artifacts/api-server/src/lib/vwap-engine.ts` — VWAP reversion signal computation
 - `artifacts/api-server/src/routes/market.ts` — REST + SSE route handlers
 - `artifacts/futures-alignment/src/components/market-dashboard.tsx` — main web UI
-- `artifacts/futures-alignment/src/components/OrbPanel.tsx` — ORB signal panel
 - `artifacts/futures-alignment/src/components/VwapPanel.tsx` — VWAP reversion panel
 - `artifacts/futures-mobile/app/index.tsx` — mobile home screen
 - `lib/api-spec/openapi.yaml` — single source of truth for all API contracts
@@ -37,13 +35,13 @@ A live futures market dashboard that answers one question in real time: *Is the 
 ## Architecture decisions
 
 - SSE stream (`/api/market/stream`) pushes updated snapshots to the web/mobile client ~once per minute as new bars arrive; polling fallback every 60s ensures mobile clients backgrounded through the gap still recover.
-- ORB and VWAP computations run on the server using the same cached bar data as the main snapshot — no extra Databento calls.
+- VWAP computations run on the server using the same cached bar data as the main snapshot — no extra Databento calls.
 - Bearer token auth (`API_TOKEN` env var) is optional; unset means all `/api` routes are open (dev default).
 - Expo mobile uses `EXPO_PUBLIC_DOMAIN` and SSE query-param auth (`?token=`) because `EventSource` cannot send custom headers.
 
 ## Product
 
-**Web (Market Posture):** Dark terminal-aesthetic dashboard showing ES, NQ, MES, MNQ. KPI summary bar, per-symbol cards with multi-timeframe signal badges, ORB section (Opening Range Breakout, 09:30–10:00 ET window), and VWAP reversion section. Session-aware (shows weekend/pre-market state when markets are closed).
+**Web (Market Posture):** Dark terminal-aesthetic dashboard showing ES, NQ, MES, MNQ. KPI summary bar, per-symbol cards with multi-timeframe signal badges, and a Globex VWAP reversion section. Session-aware (shows weekend/pre-market state when markets are closed).
 
 **Mobile (Market Posture Mobile):** Companion Expo app with real-time contract cards via SSE stream. Matches the dark aesthetic; optimized for at-a-glance reading on the go.
 

@@ -19,7 +19,7 @@ export interface TimeframeState {
   adx: number;
   /** RSI-14 0–100: >50 bullish momentum, <50 bearish */
   rsi: number;
-  /** VWAP anchored to the current America/New_York RTH session */
+  /** VWAP anchored to the current America/New_York Globex session */
   vwap: number;
   /** VWAP + 1 volume-weighted standard deviation */
   vwapStd1Up: number;

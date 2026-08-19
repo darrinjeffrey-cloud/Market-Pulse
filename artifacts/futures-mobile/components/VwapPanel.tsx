@@ -1,7 +1,7 @@
 /**
  * VwapPanel.tsx — VWAP Reversion panel for the mobile app.
  *
- * Fetches /api/market/vwap on mount and every 30 s. Active all RTH session.
+ * Fetches /api/market/vwap on mount and every 30 s. Active throughout Globex.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -354,8 +354,8 @@ function VwapCard({ v }: { v: VwapState }) {
       {(v.status === 'inactive' || v.status === 'expired') && (
         <Text style={[card.hint, { color: colors.mutedForeground }]}>
           {v.status === 'expired'
-            ? 'Session closed — resets at next RTH open'
-            : 'VWAP signals active 09:30–16:00 ET on trading days'}
+            ? 'CME closed — resets Sunday at 6:00 PM ET'
+            : 'VWAP pauses during the 5:00–6:00 PM ET maintenance break'}
         </Text>
       )}
     </View>
@@ -451,7 +451,7 @@ export default function VwapPanel({ snapshotTimestamp }: VwapPanelProps) {
       <View style={panel.headerRow}>
         <Ionicons name="analytics-outline" size={13} color={colors.mutedForeground} />
         <Text style={[panel.title, { color: colors.mutedForeground }]}>VWAP REVERSION</Text>
-        <Text style={[panel.sub, { color: colors.mutedForeground }]}>All-session · ±1σ entry</Text>
+        <Text style={[panel.sub, { color: colors.mutedForeground }]}>Globex · ±1σ entry</Text>
       </View>
 
       {loading && !data ? (

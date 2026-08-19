@@ -2,7 +2,7 @@
  * VwapPanel — VWAP Reversion signal panel
  *
  * Fetches /api/market/vwap on mount and whenever the parent market snapshot
- * timestamp changes. Also self-refreshes every 30s. Active all RTH session.
+ * timestamp changes. Also self-refreshes every 30s. Active throughout Globex.
  */
 
 import { useEffect, useState } from 'react';
@@ -277,7 +277,7 @@ function VwapCard({ state }: { state: VwapState }) {
         </div>
       ) : state.status === 'inactive' ? (
         <div className="text-center text-[10px] text-muted-foreground/60">
-          Signals active 09:30–16:00 ET on trading days
+          Signals active during CME Globex hours · reset at 6:00 PM ET
         </div>
       ) : null}
     </div>
@@ -333,7 +333,7 @@ export function VwapPanel({ snapshotTimestamp }: { snapshotTimestamp?: string })
             VWAP Reversion
           </h2>
           <span className="text-[10px] text-muted-foreground/50">
-            All-session · 09:30–16:00 ET · ±1σ entry · ±2σ stop
+            CME Globex · 6:00 PM–5:00 PM ET · ±1σ entry · ±2σ stop
           </span>
         </div>
 
@@ -351,8 +351,8 @@ export function VwapPanel({ snapshotTimestamp }: { snapshotTimestamp?: string })
         <div className="fam-card flex items-center justify-center gap-2 rounded-lg border border-border/40 py-5 text-[11px] text-muted-foreground">
           <Minus className="h-4 w-4 opacity-40" />
           {phase === 'expired'
-            ? 'RTH session ended — VWAP resets at 09:30 ET tomorrow.'
-            : 'VWAP signals only active during RTH (09:30–16:00 ET).'}
+            ? 'CME is closed for the weekend — VWAP resets Sunday at 6:00 PM ET.'
+            : 'VWAP pauses during the 5:00–6:00 PM ET maintenance break.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

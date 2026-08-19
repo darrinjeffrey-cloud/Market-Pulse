@@ -18,7 +18,6 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useAlertSettings } from '@/hooks/useAlertSettings';
 import { useAuth } from '@/lib/auth';
 import ContractCard from '@/components/ContractCard';
-import OrbPanel from '@/components/OrbPanel';
 import VwapPanel from '@/components/VwapPanel';
 import IctPanel from '@/components/IctPanel';
 import { getCMESession, formatCountdown } from '@/lib/session';
@@ -410,7 +409,6 @@ export default function HomeScreen() {
         ListHeaderComponent={<SessionClock />}
         ListFooterComponent={
           <>
-            <OrbPanel snapshotTimestamp={lastUpdated?.toISOString() ?? undefined} />
             <VwapPanel snapshotTimestamp={lastUpdated?.toISOString() ?? undefined} />
             <IctPanel snapshotTimestamp={lastUpdated?.toISOString() ?? undefined} />
           </>

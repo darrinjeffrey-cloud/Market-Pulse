@@ -49,7 +49,7 @@ export const GetMarketSnapshotResponse = zod.object({
   "volume": zod.number(),
   "adx": zod.number().describe('ADX 0–100: <20 ranging, 20–40 trending, >40 strong'),
   "rsi": zod.number().describe('RSI-14 0–100: >50 bullish momentum, <50 bearish'),
-  "vwap": zod.number().describe('VWAP anchored to the current America\/New_York RTH session'),
+  "vwap": zod.number().describe('VWAP anchored to the current America\/New_York Globex session'),
   "vwapStd1Up": zod.number().describe('VWAP + 1 volume-weighted standard deviation'),
   "vwapStd1Down": zod.number().describe('VWAP − 1 volume-weighted standard deviation'),
   "vwapStd2Up": zod.number().describe('VWAP + 2 volume-weighted standard deviations'),
