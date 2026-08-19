@@ -48,6 +48,11 @@ function getOrigin(req: Request): string {
   return parseOrigin(`${forwardedProto}://${forwardedHost}`) ?? 'https://localhost';
 }
 
+function routeParam(req: Request, name: string): string | undefined {
+  const value = req.params[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 function requireAdmin(req: Request, res: Response): boolean {
   if (req.user?.id !== 'admin') {
     res.status(403).json({ error: 'Admin only.' });
@@ -102,18 +107,35 @@ router.get('/invites', async (req: Request, res: Response) => {
 // ── DELETE /api/invites/:token — admin revokes an invite ─────────────────────
 router.delete('/invites/:token', async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
-  await db.delete(inviteTokensTable).where(eq(inviteTokensTable.token, req.params.token));
+  const token = routeParam(req, 'token');
+  if (!token) {
+    res.status(400).json({ error: 'Invite token is required.' });
+    return;
+  }
+
+  await db.delete(inviteTokensTable).where(eq(inviteTokensTable.token, token));
   res.json({ ok: true });
 });
 
 // ── GET /api/invite/:token — public: redeem invite → session + redirect ──────
 router.get('/invite/:token', async (req: Request, res: Response) => {
+  const token = routeParam(req, 'token');
+  if (!token) {
+    res.status(410).send(
+      '<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:4rem">' +
+        '<h2>Link expired or invalid</h2>' +
+        '<p>This invite link has expired or does not exist.</p>' +
+        '</body></html>',
+    );
+    return;
+  }
+
   const [row] = await db
     .select()
     .from(inviteTokensTable)
     .where(
       and(
-        eq(inviteTokensTable.token, req.params.token),
+        eq(inviteTokensTable.token, token),
         gt(inviteTokensTable.expiresAt, new Date()),
       ),
     );
