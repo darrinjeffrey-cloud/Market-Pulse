@@ -1,6 +1,6 @@
 # Market Posture
 
-A live futures market dashboard that answers one question in real time: *Is the tape aligned?* — showing multi-timeframe volume, volatility, trend direction, and Globex VWAP-reversion trade setups for ES, NQ, MES, and MNQ contracts.
+A live futures dashboard and multi-timeframe futures command center showing volume, volatility, trend direction, and Globex VWAP-reversion trade setups for ES, NQ, MES, and MNQ contracts.
 
 ## Run & Operate
 

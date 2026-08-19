@@ -1493,7 +1493,7 @@ export function MarketDashboard() {
               Market Pulse
             </div>
             <h1 className="fam-display max-w-3xl text-[clamp(2.25rem,5vw,4.6rem)] font-extrabold leading-[.93] tracking-[-.075em]">
-              Is the tape<br /><span className="text-[hsl(var(--primary))]">aligned?</span>
+              Multi-timeframe<br /><span className="text-[hsl(var(--primary))]">futures command center</span>
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
               Volume, volatility, and direction across the contracts that matter. Wait for the signal to agree before you put risk on.
