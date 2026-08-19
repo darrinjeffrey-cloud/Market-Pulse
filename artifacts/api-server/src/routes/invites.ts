@@ -13,10 +13,39 @@ const DURATIONS: Record<string, number> = {
   '30d': 30 * 24 * 60 * 60 * 1000,
 };
 
+function parseOrigin(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 function getOrigin(req: Request): string {
-  const proto = req.headers['x-forwarded-proto'] ?? 'https';
-  const host = req.headers['x-forwarded-host'] ?? req.headers['host'] ?? 'localhost';
-  return `${proto}://${host}`;
+  // The API may be mounted behind a separate internal service URL. Prefer an
+  // explicit public URL, then browser headers that identify the dashboard
+  // origin, before falling back to proxy headers.
+  const configuredOrigin = parseOrigin(process.env.PUBLIC_APP_URL);
+  const requestOrigin = parseOrigin(req.headers.origin);
+  const refererOrigin = parseOrigin(req.headers.referer);
+
+  if (configuredOrigin) return configuredOrigin;
+  if (requestOrigin) return requestOrigin;
+  if (refererOrigin) return refererOrigin;
+
+  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? 'https')
+    .split(',')[0]
+    .trim();
+  const forwardedHost = String(
+    req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost',
+  )
+    .split(',')[0]
+    .trim();
+  return parseOrigin(`${forwardedProto}://${forwardedHost}`) ?? 'https://localhost';
 }
 
 function requireAdmin(req: Request, res: Response): boolean {
@@ -41,8 +70,8 @@ function toRow(row: { token: string; label: string | null; expiresAt: Date; crea
 router.post('/invites', async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
 
-  const { duration = '48h', label } = req.body as { duration?: string; label?: string };
-  const ms = DURATIONS[duration] ?? DURATIONS['48h']!;
+  const { duration = '7d', label } = req.body as { duration?: string; label?: string };
+  const ms = DURATIONS[duration] ?? DURATIONS['7d']!;
 
   const token = crypto.randomBytes(16).toString('hex');
   const expiresAt = new Date(Date.now() + ms);
