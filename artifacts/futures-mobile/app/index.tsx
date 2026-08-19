@@ -314,7 +314,7 @@ export default function HomeScreen() {
         <View style={s.headerInner}>
           {/* Brand */}
           <View>
-            <Text style={[s.brandName, { color: colors.primary }]}>Market Posture</Text>
+            <Text style={[s.brandName, { color: colors.primary }]}>Market Pulse</Text>
           </View>
 
           <View style={s.headerRight}>

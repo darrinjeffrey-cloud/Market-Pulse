@@ -43,11 +43,14 @@ export function LoginGate({ children }: Props) {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-sm text-center">
-        <img
-          src="/favicon.png"
-          alt="Market Posture"
-          className="mx-auto mb-5 h-24 w-24 rounded-2xl"
-        />
+        <div className="mb-5 flex flex-col items-center gap-2" aria-label="Market Pulse">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[hsl(var(--primary)/.5)] bg-[hsl(var(--primary)/.1)] text-xl font-black tracking-[-.1em] text-[hsl(var(--primary))] shadow-[0_0_30px_hsl(var(--primary)/.15)]">
+            MP
+          </div>
+          <div className="fam-display text-sm font-extrabold uppercase tracking-[-.035em] text-[hsl(var(--primary))]">
+            Market Pulse
+          </div>
+        </div>
         <div className="mb-8 text-sm text-zinc-500">
           Multi-timeframe futures command center
         </div>

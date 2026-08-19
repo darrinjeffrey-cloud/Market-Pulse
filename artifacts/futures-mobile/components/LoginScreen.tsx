@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -38,11 +37,12 @@ export default function LoginScreen({ onLogin }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.card}>
-        <Image
-          source={require('../assets/images/icon.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <View style={styles.brand}>
+          <View style={styles.brandMark}>
+            <Text style={styles.brandInitials}>MP</Text>
+          </View>
+          <Text style={styles.brandName}>Market Pulse</Text>
+        </View>
         <Text style={styles.subtitle}>Multi-timeframe futures command center</Text>
 
         <TextInput
@@ -92,18 +92,33 @@ const styles = StyleSheet.create({
     maxWidth: 340,
     alignItems: 'center',
   },
-  logo: {
-    width: 96,
-    height: 96,
-    borderRadius: 20,
+  brand: {
+    alignItems: 'center',
     marginBottom: 20,
   },
-  title: {
-    color: '#EDE8DE',
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    marginBottom: 6,
+  brandMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#211907',
+    borderWidth: 1,
+    borderColor: '#F5A800',
+    marginBottom: 8,
+  },
+  brandInitials: {
+    color: '#F5A800',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -2,
+  },
+  brandName: {
+    color: '#F5A800',
+    fontSize: 14,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: -0.4,
   },
   subtitle: {
     color: '#8B7A58',

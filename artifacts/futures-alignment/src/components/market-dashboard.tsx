@@ -1407,7 +1407,7 @@ export function MarketDashboard() {
               <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[hsl(var(--primary))] shadow-[0_0_0_3px_hsl(var(--background))]" />
             </div>
             <div className="min-w-0">
-              <div className="fam-display truncate text-sm font-extrabold tracking-[-.035em]">Market Posture</div>
+              <div className="fam-display truncate text-sm font-extrabold tracking-[-.035em]">Market Pulse</div>
               <div className="mt-0.5 hidden text-[9px] font-bold uppercase tracking-[.19em] text-muted-foreground sm:block">Multi-timeframe command center</div>
             </div>
           </div>
@@ -1485,7 +1485,7 @@ export function MarketDashboard() {
           <div>
             <div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.2em] text-[hsl(var(--primary))]">
               <span className="h-px w-7 bg-[hsl(var(--primary))]" />
-              Market posture
+              Market Pulse
             </div>
             <h1 className="fam-display max-w-3xl text-[clamp(2.25rem,5vw,4.6rem)] font-extrabold leading-[.93] tracking-[-.075em]">
               Is the tape<br /><span className="text-[hsl(var(--primary))]">aligned?</span>

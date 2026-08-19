@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Market Posture"
+title = "Market Pulse"
 description = "A live futures market dashboard powered by Databento, showing multi-timeframe volume, volatility, trend direction, and aligned trade setups for ES, NQ, MES, and MNQ."
 version = "1.0.0"
 id = "artifacts/futures-alignment"
