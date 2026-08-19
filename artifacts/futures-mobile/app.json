@@ -4,12 +4,12 @@
     "slug": "futures-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/market-pulse-icon.png",
     "scheme": "futures-mobile",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash.png",
+      "image": "./assets/images/market-pulse-splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0e121b"
     },
@@ -19,12 +19,12 @@
     "android": {
       "package": "com.futuresalignment.fam",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
+        "foregroundImage": "./assets/images/market-pulse-icon.png",
         "backgroundColor": "#0e121b"
       }
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/market-pulse-icon.png"
     },
     "plugins": [
       [
@@ -38,7 +38,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
+          "icon": "./assets/images/market-pulse-icon.png",
           "color": "#6366f1",
           "sounds": []
         }

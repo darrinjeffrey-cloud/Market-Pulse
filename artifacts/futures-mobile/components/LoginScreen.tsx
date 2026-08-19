@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import MarketPulseLogo from './MarketPulseLogo';
 
 interface Props {
   onLogin: (password: string) => Promise<boolean>;
@@ -37,12 +38,7 @@ export default function LoginScreen({ onLogin }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.card}>
-        <View style={styles.brand}>
-          <View style={styles.brandMark}>
-            <Text style={styles.brandInitials}>MP</Text>
-          </View>
-          <Text style={styles.brandName}>Market Pulse</Text>
-        </View>
+        <MarketPulseLogo />
         <Text style={styles.subtitle}>Multi-timeframe futures command center</Text>
 
         <TextInput
@@ -91,34 +87,6 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 340,
     alignItems: 'center',
-  },
-  brand: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  brandMark: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#211907',
-    borderWidth: 1,
-    borderColor: '#F5A800',
-    marginBottom: 8,
-  },
-  brandInitials: {
-    color: '#F5A800',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: -2,
-  },
-  brandName: {
-    color: '#F5A800',
-    fontSize: 14,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: -0.4,
   },
   subtitle: {
     color: '#8B7A58',
