@@ -23,6 +23,8 @@ import type { Bar } from "./market-engine.js";
 /** RTH boundaries in ET minutes-from-midnight. */
 export const RTH_OPEN_ET_MINS = 9 * 60 + 30;   // 9:30 AM ET
 export const RTH_CLOSE_ET_MINS = 16 * 60 + 15; // 4:15 PM ET
+export const GLOBEX_MAINTENANCE_START_ET_MINS = 17 * 60; // 5:00 PM ET
+export const GLOBEX_OPEN_ET_MINS = 18 * 60; // 6:00 PM ET
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -96,6 +98,57 @@ export function rthWindow(
     return { start, end, phase: "expired" };
   }
   return { start, end, phase: "active" };
+}
+
+export type GlobexWindow = {
+  start: number;
+  end: number;
+  phase: RthPhase;
+};
+
+/**
+ * DST-aware CME equity-index Globex session window.
+ *
+ * Equity-index futures trade Sunday 6:00 PM ET through Friday 5:00 PM ET,
+ * with a Monday–Thursday maintenance break from 5:00–6:00 PM ET. VWAP resets
+ * at each 6:00 PM ET Globex open.
+ */
+export function globexWindow(nowMs: number): GlobexWindow {
+  const tod = etMinutesOfDay(nowMs);
+  const weekday = etDayOfWeek(nowMs);
+  const midnight = etMidnightMs(nowMs);
+  const startToday = midnight + GLOBEX_OPEN_ET_MINS * 60_000;
+  const endToday = midnight + GLOBEX_MAINTENANCE_START_ET_MINS * 60_000;
+
+  if (weekday === 6) {
+    return { start: startToday, end: startToday + DAY_MS - 60 * 60_000, phase: "expired" };
+  }
+
+  if (weekday === 0) {
+    return {
+      start: startToday,
+      end: endToday + DAY_MS,
+      phase: tod >= GLOBEX_OPEN_ET_MINS ? "active" : "inactive",
+    };
+  }
+
+  if (weekday === 5) {
+    return {
+      start: startToday - DAY_MS,
+      end: endToday,
+      phase: tod < GLOBEX_MAINTENANCE_START_ET_MINS ? "active" : "expired",
+    };
+  }
+
+  if (tod < GLOBEX_MAINTENANCE_START_ET_MINS) {
+    return { start: startToday - DAY_MS, end: endToday, phase: "active" };
+  }
+
+  if (tod < GLOBEX_OPEN_ET_MINS) {
+    return { start: startToday - DAY_MS, end: endToday, phase: "inactive" };
+  }
+
+  return { start: startToday, end: endToday + DAY_MS, phase: "active" };
 }
 
 export type SessionPhase = "overnight" | "rth";

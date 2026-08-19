@@ -12,7 +12,6 @@ import {
   type MarketSnapshot,
 } from "../lib/market-engine";
 import { startLiveFeed } from "../lib/live-feed";
-import { computeOrbSnapshot } from "../lib/orb-engine";
 import { computeVwapSnapshot, computeVwapSeriesSnapshot } from "../lib/vwap-engine";
 import { computeOvernightSnapshot } from "../lib/overnight-engine";
 import { computeIctSnapshot } from "../lib/ict-engine";
@@ -121,14 +120,6 @@ router.delete("/market/watchlist/:symbol", (req, res): void => {
 });
 
 // ---------------------------------------------------------------------------
-// Opening Range Breakout
-// ---------------------------------------------------------------------------
-
-router.get("/market/orb", (_req, res): void => {
-  res.json(computeOrbSnapshot());
-});
-
-// ---------------------------------------------------------------------------
 // VWAP Reversion
 // ---------------------------------------------------------------------------
 
@@ -136,7 +127,7 @@ router.get("/market/vwap", (_req, res): void => {
   res.json(computeVwapSnapshot());
 });
 
-// Time series of price vs running VWAP ± σ bands for the current RTH session,
+// Time series of price vs running VWAP ± σ bands for the current Globex session,
 // plus overnight H/L reference levels — used by the mini session charts.
 router.get("/market/vwap/series", (_req, res): void => {
   res.json(computeVwapSeriesSnapshot());

@@ -8,8 +8,7 @@ import {
 import {
   analyzeVwapReversion,
   calculateVwapBands,
-  currentRthBars,
-  VWAP_SIGNAL_CLOSE_ET_MINS,
+  currentGlobexBars,
   type VwapBands,
   type VwapReversionStatus,
 } from "./vwap-reversion.js";
@@ -97,7 +96,7 @@ type TimeframeState = {
   adx: number;
   /** RSI-14 (0–100): > 50 = bullish momentum, < 50 = bearish */
   rsi: number;
-  /** VWAP anchored to the current America/New_York RTH session */
+  /** VWAP anchored to the current America/New_York Globex session */
   vwap: number;
   /** VWAP + 1 volume-weighted standard deviation */
   vwapStd1Up: number;
@@ -387,13 +386,13 @@ function computeRSI(bars: Bar[], period = 14): number {
 }
 
 /**
- * VWAP anchored to the active DST-aware RTH window, with ±1σ / ±2σ
- * volume-weighted deviation bands. Outside RTH (or before session bars arrive),
+ * VWAP anchored to the active DST-aware Globex window, with ±1σ / ±2σ
+ * volume-weighted deviation bands. Outside Globex (or before session bars arrive),
  * falls back to the latest 60 bars for indicator display only.
  */
 export function computeVWAP(bars: Bar[], now: number = Date.now()): VwapBands {
-  const rthBars = currentRthBars(bars, now);
-  const source = rthBars.length > 0 ? rthBars : bars.slice(-60);
+  const globexBars = currentGlobexBars(bars, now);
+  const source = globexBars.length > 0 ? globexBars : bars.slice(-60);
   const last = bars[bars.length - 1];
   return calculateVwapBands(source) ?? {
     vwap: Number(last.close.toFixed(2)),
@@ -405,11 +404,11 @@ export function computeVWAP(bars: Bar[], now: number = Date.now()): VwapBands {
 }
 
 /**
- * True if the bar timestamp falls inside the weekday 09:30–16:00 ET VWAP
+ * True if the bar timestamp falls inside the active CME Globex VWAP
  * signal window, with DST handled by the shared session helper.
  */
 function detectRTH(ts: number): boolean {
-  return rthWindow(ts, VWAP_SIGNAL_CLOSE_ET_MINS).phase === "active";
+  return rthWindow(ts).phase === "active";
 }
 
 /**

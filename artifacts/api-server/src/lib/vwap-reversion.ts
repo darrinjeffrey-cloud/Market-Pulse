@@ -1,7 +1,6 @@
 import type { Bar } from "./market-engine.js";
-import { rthWindow } from "./session-bounds.js";
+import { globexWindow } from "./session-bounds.js";
 
-export const VWAP_SIGNAL_CLOSE_ET_MINS = 16 * 60;
 export const DEFAULT_TICK_SIZE = 0.25;
 
 export type VwapBands = {
@@ -69,8 +68,8 @@ export function calculateVwapBands(
   };
 }
 
-export function currentRthBars(bars: Bar[], nowMs: number): Bar[] {
-  const window = rthWindow(nowMs, VWAP_SIGNAL_CLOSE_ET_MINS);
+export function currentGlobexBars(bars: Bar[], nowMs: number): Bar[] {
+  const window = globexWindow(nowMs);
   return bars.filter(
     (bar) => bar.ts >= window.start && bar.ts < window.end && bar.ts <= nowMs,
   );
@@ -88,7 +87,7 @@ export function analyzeVwapReversion(
   nowMs: number = Date.now(),
   tickSize: number = DEFAULT_TICK_SIZE,
 ): VwapReversionAnalysis {
-  const window = rthWindow(nowMs, VWAP_SIGNAL_CLOSE_ET_MINS);
+  const window = globexWindow(nowMs);
   const blank: VwapReversionAnalysis = {
     status: window.phase === "expired" ? "expired" : "inactive",
     signal: null,
@@ -106,7 +105,7 @@ export function analyzeVwapReversion(
 
   if (window.phase !== "active") return blank;
 
-  const sessionBars = currentRthBars(bars, nowMs);
+  const sessionBars = currentGlobexBars(bars, nowMs);
   if (sessionBars.length < 2) {
     return { ...blank, barsInSession: sessionBars.length };
   }

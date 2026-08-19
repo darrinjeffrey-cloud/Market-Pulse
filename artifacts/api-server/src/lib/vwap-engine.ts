@@ -1,12 +1,12 @@
 /**
  * vwap-engine.ts — VWAP Reversion signal engine
  *
- * Computes intraday VWAP + standard-deviation bands from RTH bar data already
- * stored in market-engine buffers. Detects mean-reversion setups valid any
- * time during the RTH session (09:30–16:00 ET / 13:30–20:00 UTC).
+ * Computes intraday VWAP + standard-deviation bands from Globex bar data
+ * already stored in market-engine buffers. Detects mean-reversion setups
+ * throughout the CME Globex session, excluding maintenance and weekends.
  *
  * Strategy rules:
- *   VWAP     : volume-weighted average of typical price (H+L+C)/3 from RTH open
+ *   VWAP     : volume-weighted average of typical price (H+L+C)/3 from Globex open
  *   Bands    : ±1σ and ±2σ (volume-weighted standard deviation)
  *   Long setup  : price extends below VWAP−1σ AND latest close > previous close
  *   Short setup : price extends above VWAP+1σ AND latest close < previous close
@@ -14,18 +14,18 @@
  *   Stop     : ±2σ band (beyond current extension)
  *   T1       : VWAP (mean)
  *   T2       : ±1σ on the other side (overshoot target)
- *   Reset    : daily at RTH open (13:30 UTC)
+ *   Reset    : daily at 6:00 PM ET Globex open
  */
 
 import { buffers, getWatchedSymbols } from "./market-engine.js";
 import {
   overnightWindow,
   overnightHLFromBars,
-  etMinutesOfDay,
-  RTH_OPEN_ET_MINS,
+  globexWindow,
 } from "./session-bounds.js";
 import {
   analyzeVwapReversion,
+  currentGlobexBars,
   DEFAULT_TICK_SIZE,
   type VwapReversionStatus,
 } from "./vwap-reversion.js";
@@ -49,7 +49,7 @@ export type VwapState = {
   band2Lower:      number | null;   // VWAP − 2σ
   currentPrice:    number | null;
   deviationSigmas: number | null;   // (currentPrice − VWAP) / σ, signed
-  barsInSession:   number;          // RTH bars used for VWAP
+  barsInSession:   number;          // Globex bars used for VWAP
   signal:          "LONG" | "SHORT" | null;
   entry:           number | null;
   stop:            number | null;
@@ -123,9 +123,6 @@ function computeState(symbol: string, now: number): VwapState {
 
 // ─── Session time series ──────────────────────────────────────────────────────
 
-/** Series ends at 4:00 PM ET — same close as the scalar VWAP signal window. */
-const SERIES_RTH_CLOSE_ET_MINS = 16 * 60;
-
 export type VwapSeriesPoint = {
   timestamp:  string;  // ISO-8601 of the 1-min bar
   price:      number;  // bar close
@@ -163,21 +160,16 @@ function computeSeries(symbol: string, now: number): VwapSeriesState {
     overnightLow:  onLow  != null ? fmt2(onLow)  : null,
   };
 
-  // DST-aware RTH gate: 9:30 AM – 4:00 PM ET (matches the scalar VWAP panel's
-  // signal window, computed via the shared ET session-boundary helpers).
-  const etMins = etMinutesOfDay(now);
-  if (etMins < RTH_OPEN_ET_MINS || etMins >= SERIES_RTH_CLOSE_ET_MINS) return blank;
+  const session = globexWindow(now);
+  if (session.phase !== "active") return blank;
 
-  // During RTH the completed overnight window ends exactly at today's 9:30 AM
-  // ET open — use it as the DST-aware session anchor for the bar filter.
-  const rthStart = win.phase === "rth" ? win.end : now - (etMins - RTH_OPEN_ET_MINS) * 60_000;
-  const rthBars  = allBars.filter(b => b.ts >= rthStart);
-  if (rthBars.length === 0) return blank;
+  const globexBars = currentGlobexBars(allBars, now);
+  if (globexBars.length === 0) return blank;
 
   // Cumulative VWAP + σ per bar (same math as computeState, but running)
   let sumVolume = 0, sumTpVol = 0, sumTp2Vol = 0;
   const points: VwapSeriesPoint[] = [];
-  for (const bar of rthBars) {
+  for (const bar of globexBars) {
     const tp  = (bar.high + bar.low + bar.close) / 3;
     const vol = bar.volume > 0 ? bar.volume : 1;
     sumVolume += vol;
