@@ -254,9 +254,14 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   const fvgs5m   = detectFVG(bars5m);
   const currentPrice = bars1m[bars1m.length - 1].close;
 
-  // Buy-side and sell-side liquidity pools: max/min of available session levels
-  const bslCandidates = [levels.pdh, levels.onh, levels.csh].filter((v): v is number => v !== null);
-  const sslCandidates = [levels.pdl, levels.onl, levels.csl].filter((v): v is number => v !== null);
+  // Buy-side and sell-side liquidity pools must be levels established before
+  // the current five-bar sweep window. Including CSH/CSL here makes a sweep
+  // self-defeating: the current session high can never be exceeded by a bar
+  // inside that same session-high calculation, and likewise for the low.
+  // Current-session extremes remain available in `levels` for future display,
+  // but PDH/PDL and ONH/ONL are the actionable external liquidity pools.
+  const bslCandidates = [levels.pdh, levels.onh].filter((v): v is number => v !== null);
+  const sslCandidates = [levels.pdl, levels.onl].filter((v): v is number => v !== null);
   const bsl = bslCandidates.length ? Math.max(...bslCandidates) : null;
   const ssl = sslCandidates.length ? Math.min(...sslCandidates) : null;
   const recentFvg = fvgs5m[fvgs5m.length - 1] ?? null;
@@ -264,7 +269,7 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   if (bsl === null || ssl === null) {
     return waitState(symbol, displayName,
       "Cannot determine key liquidity levels — session data not yet available.",
-      "Session bars to accumulate (RTH opens at 9:30 AM ET).",
+      "Prior-day or overnight liquidity levels to accumulate.",
       0, bias15m, struct5m, bsl, ssl, recentFvg);
   }
 
