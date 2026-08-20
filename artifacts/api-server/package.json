@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx/esm --test src/lib/databento-live.test.ts src/lib/market-engine.test.ts src/lib/session-bounds.test.ts src/lib/vwap-engine.test.ts",
+    "test": "node --import tsx/esm --test src/lib/databento-live.test.ts src/lib/ict-engine.test.ts src/lib/market-engine.test.ts src/lib/session-bounds.test.ts src/lib/vwap-engine.test.ts",
     "backtest": "node --import tsx/esm src/backtest.ts",
     "vwap-backtest": "node --import tsx/esm src/vwap-backtest.ts"
   },

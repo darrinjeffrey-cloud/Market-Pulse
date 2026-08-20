@@ -101,10 +101,10 @@ function barMin(bars: Bar[], field: "high" | "low"): number {
 type Bias = "Bullish" | "Bearish" | "Neutral";
 
 /**
- * Bias via EMA 9/21 alignment + swing High-High / Low-Low structure.
+ * Bias via EMA 9/21 alignment + recent swing High-High / Low-Low structure.
  * Requires ≥ 21 bars for meaningful EMA warmup.
  */
-function determineBias(bars: Bar[]): Bias {
+export function determineBias(bars: Bar[]): Bias {
   if (bars.length < 21) return "Neutral";
   const closes = bars.map((b) => b.close);
   const ema9   = computeEMA(closes, 9);
@@ -112,13 +112,23 @@ function determineBias(bars: Bar[]): Bias {
   const last   = bars[bars.length - 1];
   const e9     = ema9[ema9.length - 1];
   const e21    = ema21[ema21.length - 1];
-  const recent = bars.slice(-10, -1);
-  if (recent.length === 0) return "Neutral";
-  const swingHigh = barMax(recent, "high");
-  const swingLow  = barMin(recent, "low");
+  const recent = bars.slice(-8);
+  const prior  = bars.slice(-16, -8);
+  if (recent.length < 5 || prior.length < 5) return "Neutral";
 
-  if (last.close > e9 && e9 > e21 && last.high > swingHigh) return "Bullish";
-  if (last.close < e9 && e9 < e21 && last.low  < swingLow)  return "Bearish";
+  // A bias should persist through normal pullbacks. Requiring the *latest*
+  // candle to make a new 9-bar extreme left ICT Neutral for almost every
+  // otherwise valid setup. Instead, confirm the EMA trend with a recent
+  // higher high/low (or lower high/low) sequence.
+  const higherStructure =
+    barMax(recent, "high") > barMax(prior, "high") ||
+    barMin(recent, "low") > barMin(prior, "low");
+  const lowerStructure =
+    barMin(recent, "low") < barMin(prior, "low") ||
+    barMax(recent, "high") < barMax(prior, "high");
+
+  if (last.close > e9 && e9 > e21 && higherStructure) return "Bullish";
+  if (last.close < e9 && e9 < e21 && lowerStructure)  return "Bearish";
   return "Neutral";
 }
 
@@ -127,16 +137,46 @@ function determineBias(bars: Bar[]): Bias {
  * Bullish FVG: low[i] > high[i-2]  (gap left by rapid upward displacement)
  * Bearish FVG: high[i] < low[i-2]  (gap left by rapid downward displacement)
  */
-function detectFVG(bars: Bar[]): IctFvg[] {
-  const fvgs: IctFvg[] = [];
+type IctFvgCandidate = IctFvg & { formedAt: number };
+
+function detectFVG(bars: Bar[]): IctFvgCandidate[] {
+  const fvgs: IctFvgCandidate[] = [];
   for (let i = 2; i < bars.length; i++) {
     if (bars[i].low > bars[i - 2].high) {
-      fvgs.push({ type: "BULLISH", top: bars[i].low, bottom: bars[i - 2].high });
+      fvgs.push({ type: "BULLISH", top: bars[i].low, bottom: bars[i - 2].high, formedAt: i });
     } else if (bars[i].high < bars[i - 2].low) {
-      fvgs.push({ type: "BEARISH", top: bars[i - 2].low, bottom: bars[i].high });
+      fvgs.push({ type: "BEARISH", top: bars[i - 2].low, bottom: bars[i].high, formedAt: i });
     }
   }
   return fvgs;
+}
+
+/**
+ * Return the latest unfilled five-minute FVG, optionally in one direction.
+ * A bullish gap is invalid after price trades through its lower boundary; a
+ * bearish gap is invalid after price trades through its upper boundary.
+ */
+export function findLatestActiveFvg(
+  bars: Bar[],
+  type?: IctFvg["type"],
+): IctFvg | null {
+  const candidates = detectFVG(bars);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const candidate = candidates[i];
+    if (type && candidate.type !== type) continue;
+    const laterBars = bars.slice(candidate.formedAt + 1);
+    const filled = candidate.type === "BULLISH"
+      ? laterBars.some((bar) => bar.low <= candidate.bottom)
+      : laterBars.some((bar) => bar.high >= candidate.top);
+    if (!filled) {
+      return {
+        type: candidate.type,
+        top: candidate.top,
+        bottom: candidate.bottom,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -251,7 +291,6 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   const bias15m  = determineBias(bars15m);
   const struct5m = determineBias(bars5m);
   const levels   = extractSessionLevels(bars1m);
-  const fvgs5m   = detectFVG(bars5m);
   const currentPrice = bars1m[bars1m.length - 1].close;
 
   // Buy-side and sell-side liquidity pools must be levels established before
@@ -264,7 +303,13 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   const sslCandidates = [levels.pdl, levels.onl].filter((v): v is number => v !== null);
   const bsl = bslCandidates.length ? Math.max(...bslCandidates) : null;
   const ssl = sslCandidates.length ? Math.min(...sslCandidates) : null;
-  const recentFvg = fvgs5m[fvgs5m.length - 1] ?? null;
+  const activeBullishFvg = findLatestActiveFvg(bars5m, "BULLISH");
+  const activeBearishFvg = findLatestActiveFvg(bars5m, "BEARISH");
+  const recentFvg = bias15m === "Bullish"
+    ? activeBullishFvg
+    : bias15m === "Bearish"
+      ? activeBearishFvg
+      : findLatestActiveFvg(bars5m);
 
   if (bsl === null || ssl === null) {
     return waitState(symbol, displayName,
@@ -288,8 +333,8 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   let whatToWaitFor = "";
 
   // ── Bullish ────────────────────────────────────────────────────────────────
-  if (bias15m === "Bullish" && struct5m === "Bullish" && sslSwept && recentFvg?.type === "BULLISH") {
-    const { top: fvgHigh, bottom: fvgLow } = recentFvg;
+  if (bias15m === "Bullish" && struct5m === "Bullish" && sslSwept && activeBullishFvg) {
+    const { top: fvgHigh, bottom: fvgLow } = activeBullishFvg;
     if (currentPrice > fvgHigh * 1.005) {
       tradeReason   = "Price has displaced past the ideal entry zone — chasing risk.";
       whatToWaitFor = `Retrace into 5M bullish FVG (${fvgLow.toFixed(2)}–${fvgHigh.toFixed(2)}).`;
@@ -314,8 +359,8 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
     }
   }
   // ── Bearish ────────────────────────────────────────────────────────────────
-  else if (bias15m === "Bearish" && struct5m === "Bearish" && bslSwept && recentFvg?.type === "BEARISH") {
-    const { top: fvgHigh, bottom: fvgLow } = recentFvg;
+  else if (bias15m === "Bearish" && struct5m === "Bearish" && bslSwept && activeBearishFvg) {
+    const { top: fvgHigh, bottom: fvgLow } = activeBearishFvg;
     if (currentPrice < fvgLow * 0.995) {
       tradeReason   = "Price has displaced past the ideal entry zone — chasing risk.";
       whatToWaitFor = `Retrace into 5M bearish FVG (${fvgLow.toFixed(2)}–${fvgHigh.toFixed(2)}).`;
@@ -376,7 +421,11 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
     rrRatio,
     bsl: parseFloat(bsl.toFixed(2)),
     ssl: parseFloat(ssl.toFixed(2)),
-    keyFvg: recentFvg,
+    keyFvg: signal === "BUY"
+      ? activeBullishFvg
+      : signal === "SELL"
+        ? activeBearishFvg
+        : recentFvg,
     tradeReason,
     whatToWaitFor,
     lastUpdated: new Date().toISOString(),
