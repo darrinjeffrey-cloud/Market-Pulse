@@ -3,3 +3,4 @@
 - [Expo web API origin](expo-web-api-origin.md) — Expo browser previews need same-origin API calls for cookie auth; native builds still use Bearer tokens.
 - [Globex VWAP session](globex-vwap-session.md) — VWAP reversion follows the full CME equity-index Globex session, resetting at 6:00 PM ET.
 - [ICT liquidity pools](ict-liquidity-pools.md) — Sweep detection must use levels established before the active sweep window, not current-session extrema.
+- [SSE connection rotation](sse-connection-rotation.md) — Rotate market SSE before the proxy’s five-minute request limit; heartbeats alone do not prevent it.

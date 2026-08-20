@@ -17,6 +17,10 @@ import { computeOvernightSnapshot } from "../lib/overnight-engine";
 import { computeIctSnapshot } from "../lib/ict-engine";
 
 const router: IRouter = Router();
+// The proxied preview/deployment path terminates long-lived HTTP responses at
+// about five minutes even while SSE heartbeats are flowing. Rotate before that
+// limit so EventSource can reconnect normally instead of surfacing a hard drop.
+const SSE_ROTATE_AFTER_MS = 4 * 60_000;
 
 // Bootstrap historical data (yesterday for indicator context) then start the
 // live intraday feed which polls every ~60s for today's session bars.
@@ -77,9 +81,16 @@ router.get("/market/stream", async (req, res): Promise<void> => {
     res.write(": heartbeat\n\n");
   }, 10_000);
 
+  // A normal SSE response end makes EventSource reconnect using the retry
+  // interval above. This keeps the connection refresh invisible to traders.
+  const rotation = setTimeout(() => {
+    res.end();
+  }, SSE_ROTATE_AFTER_MS);
+
   req.on("close", () => {
     marketEvents.off("snapshot", sendSnapshot);
     clearInterval(heartbeat);
+    clearTimeout(rotation);
   });
 });
 
