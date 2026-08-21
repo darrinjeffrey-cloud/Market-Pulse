@@ -14,3 +14,17 @@ mtime_ms = 1787274961871
 storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:33535be5-f9c9-4838-b20f-3b0996d84707/6655cd94-014e-42df-8006-eb0cb0809ea7/ca6b14f2-2345-4ad4-8035-fdc303e08b21"
 storage_version_token = "1787274983661271"
 content_type = "image/png"
+
+[[outputs]]
+id = "oGmdS7aotLvvgvHcvVkWv"
+uri = "file://artifacts/futures-mobile/assets/images/market-pulse-logo.png"
+type = "image"
+title = "Market Pulse named logo"
+description = "Full Market Pulse logo lockup with the heartbeat/up-arrow mark and MARKET PULSE name, on the dark gold brand tile with transparent outer corners."
+logical_id = "26144a78-2a1f-4744-bf69-84037af4d648"
+content_hash = "sha256:ac3dd7158298c22d8760a103555b02ae78a6bb629502f301ac6aef93297c5424"
+size = 206391
+mtime_ms = 1787275029204
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:33535be5-f9c9-4838-b20f-3b0996d84707/26144a78-2a1f-4744-bf69-84037af4d648/5f1d396d-eef9-49ae-9327-3f106e2a6468"
+storage_version_token = "1787275035390522"
+content_type = "image/png"
