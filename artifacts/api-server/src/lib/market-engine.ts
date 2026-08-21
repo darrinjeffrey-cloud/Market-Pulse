@@ -75,6 +75,8 @@ const DEFAULT_SYMBOLS = ["ES.v.0", "NQ.v.0", "MES.v.0", "MNQ.v.0"];
 const watchedSymbols = new Set<string>(DEFAULT_SYMBOLS);
 const MAX_BARS = 4320; // 3 days of 1-minute bars — enough for EMA warmup on all timeframes
 const REFRESH_MS = 60_000;
+const HISTORICAL_INGEST_LAG_MS = 90_000;
+const HISTORICAL_BOOTSTRAP_DAYS = 3;
 
 export type Bar = {
   ts: number;
@@ -642,12 +644,37 @@ export function rebuildSnapshot(message: string | null = null): void {
   marketEvents.emit("snapshot", latestSnapshot);
 }
 
-// Fetch the prior completed UTC day (24h window ending at midnight) for one symbol.
-// Databento historical data only goes up to midnight UTC, so we cap the end there.
+/**
+ * Historical bars are finalized a little after each minute closes. The historical
+ * endpoint otherwise rejects a request ending at the new UTC midnight during the
+ * first minute or two of the day. Cap at both the completed UTC day and the last
+ * safely available minute so a cold start never leaves the signal engines without
+ * the previous RTH / overnight reference data for an hour.
+ */
+export function historicalBootstrapWindow(nowMs: number = Date.now()): {
+  start: Date;
+  end: Date;
+} {
+  const now = new Date(nowMs);
+  const utcMidnightMs = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  const latestSafeMinuteMs = Math.floor(
+    (nowMs - HISTORICAL_INGEST_LAG_MS) / 60_000,
+  ) * 60_000;
+  const endMs = Math.min(utcMidnightMs, latestSafeMinuteMs);
+
+  return {
+    start: new Date(endMs - HISTORICAL_BOOTSTRAP_DAYS * 24 * 60 * 60_000),
+    end: new Date(endMs),
+  };
+}
+
+// Fetch the prior completed UTC-day range for one symbol.
 async function bootstrapSymbol(symbol: string, auth: string): Promise<void> {
-  const now = new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const start = new Date(end.getTime() - 3 * 24 * 60 * 60_000); // 3 days for EMA warmup
+  const { start, end } = historicalBootstrapWindow();
   const params = new URLSearchParams({
     dataset: DATASET,
     schema: "ohlcv-1m",

@@ -17,12 +17,24 @@ import {
   evaluateSymbol,
   computeVWAP,
   buffers,
+  historicalBootstrapWindow,
   type Bar,
 } from "./market-engine.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+describe("historicalBootstrapWindow", () => {
+  it("uses the last safely closed minute when booting just after UTC midnight", () => {
+    const { start, end } = historicalBootstrapWindow(
+      Date.UTC(2026, 7, 21, 0, 0, 43),
+    );
+
+    assert.equal(end.getTime(), Date.UTC(2026, 7, 20, 23, 59));
+    assert.equal(start.getTime(), Date.UTC(2026, 7, 17, 23, 59));
+  });
+});
 
 /**
  * Build a sequence of `count` bars with linearly changing closes.
