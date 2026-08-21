@@ -5,3 +5,4 @@
 - [ICT liquidity pools](ict-liquidity-pools.md) — Sweep detection must use levels established before the active sweep window, not current-session extrema.
 - [ICT signal selection](ict-signal-selection.md) — Preserve trend bias through pullbacks and pair setups only with active, unfilled FVGs.
 - [SSE connection rotation](sse-connection-rotation.md) — Rotate market SSE before the proxy’s five-minute request limit; heartbeats alone do not prevent it.
+- [Databento historical bootstrap](databento-historical-bootstrap.md) — Protect cold starts near UTC midnight from unavailable final-minute historical ranges.
