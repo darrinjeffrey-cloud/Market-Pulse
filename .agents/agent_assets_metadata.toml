@@ -1,3 +1,16 @@
 uploads = []
 generated = []
-outputs = []
+
+[[outputs]]
+id = "F6k0yFuxaU_7KmCoPW3cU"
+uri = "file://artifacts/futures-mobile/assets/images/market-pulse-icon.png"
+type = "image"
+title = "Market Pulse app icon"
+description = "Square 1024px RGBA icon derived from the Market Pulse heartbeat/up-arrow logo, with transparent rounded corners for app and notification use."
+logical_id = "6655cd94-014e-42df-8006-eb0cb0809ea7"
+content_hash = "sha256:46d896148d3fa4b0adf7b4b3760ebfb709670ed0a515add9c32b9682e666962e"
+size = 47064
+mtime_ms = 1787274961871
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:33535be5-f9c9-4838-b20f-3b0996d84707/6655cd94-014e-42df-8006-eb0cb0809ea7/ca6b14f2-2345-4ad4-8035-fdc303e08b21"
+storage_version_token = "1787274983661271"
+content_type = "image/png"
