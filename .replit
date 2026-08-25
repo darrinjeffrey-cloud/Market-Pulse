@@ -23,3 +23,19 @@ timeoutMs = 20000
 
 [userenv.shared]
 ALLOWED_EMAIL = "darrinjeffrey@gmail.com"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 22434
+externalPort = 3000
+
+[[ports]]
+localPort = 24950
+externalPort = 80
