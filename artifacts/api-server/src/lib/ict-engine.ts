@@ -19,6 +19,13 @@ import {
 const DAY_MS  = 24 * 60 * 60_000;
 const MIN_BARS = 20;
 const MIN_RR   = 2.0;
+const SWEEP_LOOKBACK_BARS = 24;
+const RECLAIM_WINDOW_BARS = 2;
+const STRUCTURE_LOOKBACK_BARS = 8;
+const CHOCH_WINDOW_BARS = 5;
+const FVG_FORMATION_WINDOW_BARS = 3;
+const FVG_RETRACE_WINDOW_BARS = 12;
+const MIN_DISPLACEMENT_BODY_RATIO = 0.6;
 
 // Only compute ICT signals for these symbols (core equity futures)
 const ICT_SYMBOLS = ["ES.v.0", "NQ.v.0", "MES.v.0", "MNQ.v.0"];
@@ -179,19 +186,266 @@ export function findLatestActiveFvg(
   return null;
 }
 
+type SetupDirection = "BULLISH" | "BEARISH";
+type CausalSetupStatus =
+  | "NONE"
+  | "AWAITING_CHOCH"
+  | "AWAITING_FVG"
+  | "AWAITING_RETRACE"
+  | "READY"
+  | "INVALIDATED"
+  | "EXPIRED";
+
+type SweepEvent = {
+  side: "SSL" | "BSL";
+  sweepIndex: number;
+  reclaimIndex: number;
+  extreme: number;
+};
+
+export type CausalIctSetup = {
+  direction: SetupDirection;
+  status: CausalSetupStatus;
+  sweepIndex: number | null;
+  reclaimIndex: number | null;
+  displacementIndex: number | null;
+  retraceIndex: number | null;
+  structureLevel: number | null;
+  fvg: IctFvg | null;
+};
+
+function emptyCausalSetup(direction: SetupDirection): CausalIctSetup {
+  return {
+    direction,
+    status: "NONE",
+    sweepIndex: null,
+    reclaimIndex: null,
+    displacementIndex: null,
+    retraceIndex: null,
+    structureLevel: null,
+    fvg: null,
+  };
+}
+
 /**
- * Liquidity sweep: did price breach the level in the last 5 bars then
- * close back on the other side (reclaim)?
- *
- * SSL sweep → bullish (swept sell-side, reclaimed above)
- * BSL sweep → bearish (swept buy-side, reclaimed below)
+ * Find the latest actionable external-liquidity sweep and reclaim.
+ * A reclaim must occur on the sweep bar or within the next two 5M bars.
  */
-function checkSweep(bars: Bar[], level: number, side: "SSL" | "BSL"): boolean {
-  const recent = bars.slice(-5);
-  if (!recent.length) return false;
-  const last = recent[recent.length - 1];
-  if (side === "SSL") return recent.some((b) => b.low < level) && last.close > level;
-  return recent.some((b) => b.high > level) && last.close < level;
+function findRecentSweep(
+  bars: Bar[],
+  level: number,
+  side: "SSL" | "BSL",
+): SweepEvent | null {
+  const start = Math.max(0, bars.length - SWEEP_LOOKBACK_BARS);
+  let latest: SweepEvent | null = null;
+
+  for (let sweepIndex = start; sweepIndex < bars.length; sweepIndex++) {
+    const sweepBar = bars[sweepIndex];
+    const breached = side === "SSL"
+      ? sweepBar.low < level
+      : sweepBar.high > level;
+    if (!breached) continue;
+
+    const reclaimEnd = Math.min(bars.length - 1, sweepIndex + RECLAIM_WINDOW_BARS);
+    for (let reclaimIndex = sweepIndex; reclaimIndex <= reclaimEnd; reclaimIndex++) {
+      const reclaimed = side === "SSL"
+        ? bars[reclaimIndex].close > level
+        : bars[reclaimIndex].close < level;
+      if (!reclaimed) continue;
+
+      latest = {
+        side,
+        sweepIndex,
+        reclaimIndex,
+        extreme: side === "SSL" ? sweepBar.low : sweepBar.high,
+      };
+      break;
+    }
+  }
+
+  return latest;
+}
+
+function recentStructureLevel(
+  bars: Bar[],
+  beforeIndex: number,
+  direction: SetupDirection,
+): number | null {
+  const start = Math.max(0, beforeIndex - STRUCTURE_LOOKBACK_BARS);
+  const source = bars.slice(start, beforeIndex);
+  if (source.length < 3) return null;
+  return direction === "BULLISH"
+    ? barMax(source, "high")
+    : barMin(source, "low");
+}
+
+function displacementBodyRatio(bar: Bar): number {
+  const range = bar.high - bar.low;
+  return range > 0 ? Math.abs(bar.close - bar.open) / range : 0;
+}
+
+function findDisplacement(
+  bars: Bar[],
+  sweep: SweepEvent,
+  direction: SetupDirection,
+): { index: number; structureLevel: number } | null {
+  const structureLevel = recentStructureLevel(bars, sweep.sweepIndex, direction);
+  if (structureLevel === null) return null;
+
+  const end = Math.min(bars.length - 1, sweep.reclaimIndex + CHOCH_WINDOW_BARS);
+  for (let index = sweep.reclaimIndex + 1; index <= end; index++) {
+    const candidate = bars[index];
+    const directionalBody = direction === "BULLISH"
+      ? candidate.close > candidate.open
+      : candidate.close < candidate.open;
+    const breaksStructure = direction === "BULLISH"
+      ? candidate.close > structureLevel
+      : candidate.close < structureLevel;
+    if (
+      directionalBody &&
+      breaksStructure &&
+      displacementBodyRatio(candidate) >= MIN_DISPLACEMENT_BODY_RATIO
+    ) {
+      return { index, structureLevel };
+    }
+  }
+
+  return null;
+}
+
+function causalFvgCandidates(
+  bars: Bar[],
+  direction: SetupDirection,
+  displacementIndex: number,
+): IctFvgCandidate[] {
+  const latestFormationIndex = displacementIndex + FVG_FORMATION_WINDOW_BARS;
+  return detectFVG(bars).filter((candidate) =>
+    candidate.type === direction &&
+    candidate.formedAt >= displacementIndex &&
+    candidate.formedAt <= latestFormationIndex
+  );
+}
+
+/**
+ * Evaluate a complete sweep → reclaim → CHoCH displacement → new FVG →
+ * retracement sequence. The result is deliberately independent of the 15M/5M
+ * trend filters so the causal price-action sequence can be tested in isolation.
+ */
+export function evaluateCausalIctSetup(
+  bars: Bar[],
+  liquidityLevel: number,
+  direction: SetupDirection,
+): CausalIctSetup {
+  const result = emptyCausalSetup(direction);
+  if (bars.length < 6) return result;
+
+  const side = direction === "BULLISH" ? "SSL" : "BSL";
+  const sweep = findRecentSweep(bars, liquidityLevel, side);
+  if (!sweep) return result;
+  result.sweepIndex = sweep.sweepIndex;
+  result.reclaimIndex = sweep.reclaimIndex;
+
+  const displacement = findDisplacement(bars, sweep, direction);
+  if (!displacement) {
+    result.status = bars.length - 1 > sweep.reclaimIndex + CHOCH_WINDOW_BARS
+      ? "EXPIRED"
+      : "AWAITING_CHOCH";
+    return result;
+  }
+  result.displacementIndex = displacement.index;
+  result.structureLevel = displacement.structureLevel;
+
+  const candidates = causalFvgCandidates(bars, direction, displacement.index);
+  if (!candidates.length) {
+    result.status = bars.length - 1 > displacement.index + FVG_FORMATION_WINDOW_BARS
+      ? "EXPIRED"
+      : "AWAITING_FVG";
+    return result;
+  }
+
+  const candidate = candidates[candidates.length - 1];
+  result.fvg = {
+    type: candidate.type,
+    top: candidate.top,
+    bottom: candidate.bottom,
+  };
+
+  const laterBars = bars.slice(candidate.formedAt + 1);
+  const invalidationOffset = laterBars.findIndex((bar) =>
+    direction === "BULLISH"
+      ? bar.low <= candidate.bottom
+      : bar.high >= candidate.top
+  );
+  if (invalidationOffset >= 0) {
+    result.status = "INVALIDATED";
+    return result;
+  }
+
+  const setupAge = bars.length - 1 - candidate.formedAt;
+  if (setupAge > FVG_RETRACE_WINDOW_BARS) {
+    result.status = "EXPIRED";
+    return result;
+  }
+
+  const retraceOffset = laterBars.findIndex((bar) =>
+    direction === "BULLISH"
+      ? bar.low <= candidate.top && bar.close > candidate.bottom
+      : bar.high >= candidate.bottom && bar.close < candidate.top
+  );
+  if (retraceOffset < 0) {
+    result.status = "AWAITING_RETRACE";
+    return result;
+  }
+
+  const retraceIndex = candidate.formedAt + 1 + retraceOffset;
+  result.retraceIndex = retraceIndex;
+  const current = bars[bars.length - 1];
+  const currentCloseInEntryZone =
+    current.close >= candidate.bottom &&
+    current.close <= candidate.top;
+  result.status = currentCloseInEntryZone ? "READY" : "EXPIRED";
+  return result;
+}
+
+function setupWaitCopy(
+  setup: CausalIctSetup,
+  direction: SetupDirection,
+): { tradeReason: string; whatToWaitFor: string } {
+  const liquidity = direction === "BULLISH" ? "SSL" : "BSL";
+  const label = direction === "BULLISH" ? "bullish" : "bearish";
+  switch (setup.status) {
+    case "AWAITING_CHOCH":
+      return {
+        tradeReason: `${liquidity} swept and reclaimed, but no qualifying ${label} 5M CHoCH displacement is confirmed.`,
+        whatToWaitFor: `A decisive 5M close through the pre-sweep structure with a strong ${label} candle body.`,
+      };
+    case "AWAITING_FVG":
+      return {
+        tradeReason: `${liquidity} sweep and ${label} CHoCH are confirmed, but the displacement has not formed a new 5M FVG.`,
+        whatToWaitFor: `A new active ${label} 5M FVG formed by the post-sweep displacement.`,
+      };
+    case "AWAITING_RETRACE":
+      return {
+        tradeReason: `${liquidity} sweep, ${label} CHoCH, and a new displacement FVG are confirmed.`,
+        whatToWaitFor: `A timely retracement into the new 5M ${label} FVG.`,
+      };
+    case "INVALIDATED":
+      return {
+        tradeReason: `The post-sweep ${label} FVG was fully invalidated before a tradeable entry completed.`,
+        whatToWaitFor: `A fresh ${liquidity} sweep followed by a new ${label} CHoCH and FVG.`,
+      };
+    case "EXPIRED":
+      return {
+        tradeReason: `The most recent ${label} sweep-to-FVG sequence expired before a valid entry completed.`,
+        whatToWaitFor: `A fresh ${liquidity} sweep and complete post-sweep displacement sequence.`,
+      };
+    case "NONE":
+    default:
+      return {
+        tradeReason: `No qualifying ${liquidity} sweep and reclaim is active.`,
+        whatToWaitFor: `${liquidity} sweep, reclaim, 5M ${label} CHoCH displacement, and a new active FVG.`,
+      };
+  }
 }
 
 type SessionLevels = {
@@ -291,7 +545,6 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   const bias15m  = determineBias(bars15m);
   const struct5m = determineBias(bars5m);
   const levels   = extractSessionLevels(bars1m);
-  const currentPrice = bars1m[bars1m.length - 1].close;
 
   // Buy-side and sell-side liquidity pools must be levels established before
   // the current five-bar sweep window. Including CSH/CSL here makes a sweep
@@ -318,8 +571,8 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
       0, bias15m, struct5m, bsl, ssl, recentFvg);
   }
 
-  const sslSwept = checkSweep(bars5m, ssl, "SSL");
-  const bslSwept = checkSweep(bars5m, bsl, "BSL");
+  const bullishSetup = evaluateCausalIctSetup(bars5m, ssl, "BULLISH");
+  const bearishSetup = evaluateCausalIctSetup(bars5m, bsl, "BEARISH");
 
   let signal: IctSignal = "WAIT";
   let confidence = 50;
@@ -331,16 +584,17 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
   let rrRatio: number | null = null;
   let tradeReason   = "";
   let whatToWaitFor = "";
+  let setupFvg: IctFvg | null = null;
 
   // ── Bullish ────────────────────────────────────────────────────────────────
-  if (bias15m === "Bullish" && struct5m === "Bullish" && sslSwept && activeBullishFvg) {
-    const { top: fvgHigh, bottom: fvgLow } = activeBullishFvg;
-    if (currentPrice > fvgHigh * 1.005) {
-      tradeReason   = "Price has displaced past the ideal entry zone — chasing risk.";
-      whatToWaitFor = `Retrace into 5M bullish FVG (${fvgLow.toFixed(2)}–${fvgHigh.toFixed(2)}).`;
-    } else {
+  if (bias15m === "Bullish" && struct5m === "Bullish") {
+    setupFvg = bullishSetup.fvg;
+    if (bullishSetup.status === "READY" && bullishSetup.fvg !== null) {
+      const { top: fvgHigh, bottom: fvgLow } = bullishSetup.fvg;
       const mid  = (fvgLow + fvgHigh) / 2;
-      const stop = barMin(bars5m.slice(-5), "low");
+      const stopStart = bullishSetup.sweepIndex ?? Math.max(0, bars5m.length - 5);
+      const stopEnd = (bullishSetup.retraceIndex ?? bars5m.length - 1) + 1;
+      const stop = barMin(bars5m.slice(stopStart, stopEnd), "low");
       const risk = mid - stop;
       if (risk > 0) {
         signal     = "BUY";
@@ -356,17 +610,19 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
         tradeReason   = "Bullish conditions met but stop is above mid — no tradeable risk.";
         whatToWaitFor = "Clean 5M FVG with the sweep low clearly below the gap.";
       }
+    } else {
+      ({ tradeReason, whatToWaitFor } = setupWaitCopy(bullishSetup, "BULLISH"));
     }
   }
   // ── Bearish ────────────────────────────────────────────────────────────────
-  else if (bias15m === "Bearish" && struct5m === "Bearish" && bslSwept && activeBearishFvg) {
-    const { top: fvgHigh, bottom: fvgLow } = activeBearishFvg;
-    if (currentPrice < fvgLow * 0.995) {
-      tradeReason   = "Price has displaced past the ideal entry zone — chasing risk.";
-      whatToWaitFor = `Retrace into 5M bearish FVG (${fvgLow.toFixed(2)}–${fvgHigh.toFixed(2)}).`;
-    } else {
+  else if (bias15m === "Bearish" && struct5m === "Bearish") {
+    setupFvg = bearishSetup.fvg;
+    if (bearishSetup.status === "READY" && bearishSetup.fvg !== null) {
+      const { top: fvgHigh, bottom: fvgLow } = bearishSetup.fvg;
       const mid  = (fvgLow + fvgHigh) / 2;
-      const stop = barMax(bars5m.slice(-5), "high");
+      const stopStart = bearishSetup.sweepIndex ?? Math.max(0, bars5m.length - 5);
+      const stopEnd = (bearishSetup.retraceIndex ?? bars5m.length - 1) + 1;
+      const stop = barMax(bars5m.slice(stopStart, stopEnd), "high");
       const risk = stop - mid;
       if (risk > 0) {
         signal     = "SELL";
@@ -382,6 +638,8 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
         tradeReason   = "Bearish conditions met but stop is below mid — no tradeable risk.";
         whatToWaitFor = "Clean 5M FVG with the sweep high clearly above the gap.";
       }
+    } else {
+      ({ tradeReason, whatToWaitFor } = setupWaitCopy(bearishSetup, "BEARISH"));
     }
   }
   // ── No setup ───────────────────────────────────────────────────────────────
@@ -392,8 +650,8 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
       tradeReason    = "Timeframe divergence — 15M bias and 5M structure conflict.";
       whatToWaitFor  = "Alignment of 15M trend with 5M structure shift.";
     } else {
-      tradeReason    = "No high-probability liquidity sweep + displacement setup confirmed.";
-      whatToWaitFor  = "BSL or SSL sweep followed by CHoCH displacement leaving an open 5M FVG.";
+      tradeReason    = "15M bias and 5M structure are not yet aligned for a causal ICT setup.";
+      whatToWaitFor  = "Aligned multi-timeframe bias before the sweep → CHoCH → new FVG sequence completes.";
     }
   }
 
@@ -422,10 +680,10 @@ function analyzeSymbol(symbol: string, displayName: string): IctState {
     bsl: parseFloat(bsl.toFixed(2)),
     ssl: parseFloat(ssl.toFixed(2)),
     keyFvg: signal === "BUY"
-      ? activeBullishFvg
+      ? bullishSetup.fvg
       : signal === "SELL"
-        ? activeBearishFvg
-        : recentFvg,
+        ? bearishSetup.fvg
+        : setupFvg ?? recentFvg,
     tradeReason,
     whatToWaitFor,
     lastUpdated: new Date().toISOString(),
